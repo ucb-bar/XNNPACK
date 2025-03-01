@@ -901,26 +901,26 @@ enum xnn_status xnn_setup_runtime_v2(
 
 static xnn_timestamp xnn_read_timer() {
   xnn_timestamp timestamp;
-#ifdef __MACH__
-  timestamp = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-  if (timestamp == 0) {
-    xnn_log_warning("clock_gettime failed: error code %d", errno);
-  }
-#elif __EMSCRIPTEN__
-  timestamp = emscripten_get_now();
-#elif XNN_PLATFORM_WINDOWS
-  BOOL res = QueryPerformanceCounter(&timestamp);
-  if (!res) {
-    xnn_log_error("QueryPerformanceCounter failed: error code %u", GetLastError());
-    memset(&timestamp, 0, sizeof(timestamp));
-  }
-#else
-  int res = clock_gettime(CLOCK_MONOTONIC, &timestamp);
-  if (res != 0) {
-    xnn_log_error("clock_gettime failed: error code %d", errno);
-    memset(&timestamp, 0, sizeof(timestamp));
-  }
-#endif
+// #ifdef __MACH__
+//   timestamp = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+//   if (timestamp == 0) {
+//     xnn_log_warning("clock_gettime failed: error code %d", errno);
+//   }
+// #elif __EMSCRIPTEN__
+//   timestamp = emscripten_get_now();
+// #elif XNN_PLATFORM_WINDOWS
+//   BOOL res = QueryPerformanceCounter(&timestamp);
+//   if (!res) {
+//     xnn_log_error("QueryPerformanceCounter failed: error code %u", GetLastError());
+//     memset(&timestamp, 0, sizeof(timestamp));
+//   }
+// #else
+//   int res = clock_gettime(CLOCK_MONOTONIC, &timestamp);
+//   if (res != 0) {
+//     xnn_log_error("clock_gettime failed: error code %d", errno);
+//     memset(&timestamp, 0, sizeof(timestamp));
+//   }
+// #endif
   return timestamp;
 }
 

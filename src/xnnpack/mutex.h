@@ -18,6 +18,7 @@
 #else
 #include <pthread.h>
 #endif
+// #include <zephyr/posix/pthread.h>
 
 #ifdef __cplusplus
 extern "C" {
