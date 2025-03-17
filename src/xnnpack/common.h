@@ -135,11 +135,12 @@
   #define XNN_PLATFORM_QURT 0
 #endif
 
-#if XNN_PLATFORM_WINDOWS
+/* #if XNN_PLATFORM_WINDOWS
   #define XNN_HAS_MMAP 0
 #else
   #define XNN_HAS_MMAP 1
-#endif
+#endif */
+#define XNN_HAS_MMAP 0
 
 #if XNN_PLATFORM_WINDOWS
   #define XNN_HAS_PTHREADS 0

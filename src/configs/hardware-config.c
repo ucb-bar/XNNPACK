@@ -31,7 +31,7 @@
 
 #if XNN_ARCH_RISCV
 #include <inttypes.h>
-#include <sys/auxv.h>
+// #include <sys/auxv.h>
 
 #define COMPAT_HWCAP_ISA_V (1 << ('V' - 'A'))
 #endif
@@ -209,9 +209,7 @@ static void init_hardware_config(void) {
 #endif  // XNN_ARCH_HEXAGON
 
   #if XNN_ARCH_RISCV
-    const long hwcap = getauxval(AT_HWCAP);
-    xnn_log_debug("getauxval(AT_HWCAP) = %08lX", hwcap);
-    hardware_config.use_riscv_vector = (hwcap & COMPAT_HWCAP_ISA_V) != 0;
+    hardware_config.use_riscv_vector = XNN_ENABLE_RISCV_VECTOR;
 
     /* There is no HWCAP for fp16 so disable by default */
     hardware_config.use_riscv_vector_fp16_arith = false;
