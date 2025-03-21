@@ -53,6 +53,13 @@
 #else
 #define XNN_LOG_NEWLINE_LENGTH 1
 
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
+#endif
+#ifndef STDOUT_FILENO
+#define STDOUT_FILENO 1
+#endif
+
 #define XNN_LOG_STDERR STDERR_FILENO
 #define XNN_LOG_STDOUT STDOUT_FILENO
 #endif
