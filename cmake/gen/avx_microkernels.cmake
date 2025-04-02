@@ -30,8 +30,11 @@ SET(PROD_AVX_MICROKERNEL_SRCS
   src/f32-qc8w-gemm/gen/f32-qc8w-gemm-5x16-minmax-avx-broadcast.c
   src/f32-qs8-vcvt/gen/f32-qs8-vcvt-avx-u32.c
   src/f32-qu8-vcvt/gen/f32-qu8-vcvt-avx-u32.c
+  src/f32-rdminmax/gen/f32-rdmax-2p2x-avx-c32.c
+  src/f32-rdminmax/gen/f32-rdmin-2p2x-avx-c32.c
   src/f32-rdsum/gen/f32-rdsum-7p7x-minmax-avx-c32.c
   src/f32-rminmax/gen/f32-rmax-avx-u32-acc4.c
+  src/f32-rminmax/gen/f32-rmin-avx-u32-acc4.c
   src/f32-rminmax/gen/f32-rminmax-avx-u32-acc4.c
   src/f32-rsum/gen/f32-rsum-avx-u32-acc4.c
   src/f32-vapproxgelu/gen/f32-vapproxgelu-avx-rational-12-10-div.c
@@ -58,6 +61,7 @@ SET(PROD_AVX_MICROKERNEL_SRCS
   src/f32-vcopysign/gen/f32-vcopysign-avx.c
   src/f32-vcopysign/gen/f32-vcopysignc-avx.c
   src/f32-vcopysign/gen/f32-vrcopysignc-avx.c
+  src/f32-vcos/gen/f32-vcos-avx-rational-5-4-div.c
   src/f32-velu/gen/f32-velu-avx-rr2-lut4-p4-perm-u32.c
   src/f32-vgelu/gen/f32-vgelu-avx-rational-12-10-div.c
   src/f32-vhswish/gen/f32-vhswish-avx-u16.c
@@ -68,6 +72,7 @@ SET(PROD_AVX_MICROKERNEL_SRCS
   src/f32-vrnd/gen/f32-vrndz-avx-u16.c
   src/f32-vrsqrt/gen/f32-vrsqrt-avx-rsqrt-u16.c
   src/f32-vsigmoid/gen/f32-vsigmoid-avx-rr2-p5-nr2-u16.c
+  src/f32-vsin/gen/f32-vsin-avx-rational-5-4-div.c
   src/f32-vsqrt/gen/f32-vsqrt-avx-rsqrt-u16.c
   src/f32-vtanh/gen/f32-vtanh-avx-rational-9-8-div.c
   src/f32-vunary/gen/f32-vabs-avx.c
@@ -158,7 +163,6 @@ SET(NON_PROD_AVX_MICROKERNEL_SRCS
   src/f32-igemm/gen/f32-igemm-6x8-minmax-avx-broadcast.c
   src/f32-igemm/gen/f32-igemm-6x16-minmax-avx-broadcast.c
   src/f32-igemm/gen/f32-igemm-7x8-minmax-avx-broadcast.c
-  src/f32-prelu/gen/f32-prelu-avx-2x16.c
   src/f32-qc4w-gemm/gen/f32-qc4w-gemm-2x16-minmax-avx-broadcast.c
   src/f32-qc4w-gemm/gen/f32-qc4w-gemm-4x16-minmax-avx-broadcast.c
   src/f32-qc4w-gemm/gen/f32-qc4w-gemm-5x16-minmax-avx-broadcast.c
@@ -187,7 +191,6 @@ SET(NON_PROD_AVX_MICROKERNEL_SRCS
   src/f32-rminmax/gen/f32-rmin-avx-u16-acc2.c
   src/f32-rminmax/gen/f32-rmin-avx-u24-acc3.c
   src/f32-rminmax/gen/f32-rmin-avx-u32-acc2.c
-  src/f32-rminmax/gen/f32-rmin-avx-u32-acc4.c
   src/f32-rminmax/gen/f32-rminmax-avx-u8.c
   src/f32-rminmax/gen/f32-rminmax-avx-u16-acc2.c
   src/f32-rminmax/gen/f32-rminmax-avx-u24-acc3.c

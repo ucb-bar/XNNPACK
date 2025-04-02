@@ -6,13 +6,15 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+// clang-format off
+
 #pragma once
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "pthreadpool.h"
+#include <pthreadpool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -504,6 +506,7 @@ enum xnn_unary_operator {
   xnn_unary_ceiling,
   xnn_unary_clamp,
   xnn_unary_convert,
+  xnn_unary_cosine,
   xnn_unary_elu,
   xnn_unary_exp,
   xnn_unary_floor,
@@ -514,17 +517,16 @@ enum xnn_unary_operator {
   xnn_unary_negate,
   xnn_unary_reciprocal_square_root,
   xnn_unary_sigmoid,
+  xnn_unary_sine,
   xnn_unary_square_root,
   xnn_unary_square,
   xnn_unary_tanh,
   // The following operators are experimental and may be removed.
   xnn_unary_bitwise_not,
-  xnn_unary_cosine,
   xnn_unary_count_leading_zeros,
   xnn_unary_cube_root,
   xnn_unary_popcount,
   xnn_unary_sign,
-  xnn_unary_sine,
 };
 
 /// Parameters for xnn_define_unary
@@ -1405,11 +1407,15 @@ enum xnn_status xnn_define_static_constant_pad(
 ///
 /// @param subgraph - a Subgraph object that will own the created Node.
 /// @param num_new_axes - number of new axes of size 1 to be inserted.
-/// @param new_axes - The axis positions of the new axes in the expanded dimensions.
-/// @param input_id - Value ID for the input tensor. The input tensor must be defined in the @a subgraph.
-/// @param output_id - Value ID for the output tensor. The output tensor must be defined in the @a subgraph, and its
-///                    shape must match the shape of the input tensor with padding.
-/// @param flags - binary features of the Constant Pad Node. No supported flags are currently defined.
+/// @param new_axes - The axis positions of the new axes in the expanded
+///                   dimensions.
+/// @param input_id - Value ID for the input tensor. The input tensor must be
+///                   defined in the @a subgraph.
+/// @param output_id - Value ID for the output tensor. The output tensor must be
+///                    defined in the @a subgraph, and its shape must match the
+///                    shape of the input tensor with padding.
+/// @param flags - binary features of the Expand Dims Node. No supported flags
+/// are currently defined.
 enum xnn_status xnn_define_static_expand_dims(
   xnn_subgraph_t subgraph,
   size_t num_new_axes,
@@ -1417,6 +1423,63 @@ enum xnn_status xnn_define_static_expand_dims(
   uint32_t input_id,
   uint32_t output_id,
   uint32_t flags);
+
+/// Define a Fuse Dims Node with and add it to a Subgraph.
+///
+/// Given an input Tensor of shape `[a, b, c, d]` and @a axis = 1 and
+/// @a axes_count = 2, this node reshapes the Tensor to the shape
+/// `[a, b * c, d]`.
+///
+/// @param subgraph - a Subgraph object that will own the created Node.
+/// @param axis - The index of the first dimension to be contracted.
+/// @param axes_count - The number of dimensions, starting from @a axis,
+///                     to contract.
+/// @param input_id - Value ID for the input tensor. The input tensor must be
+///                   defined in the @a subgraph.
+/// @param output_id - Value ID for the output tensor. The output tensor must be
+///                    defined in the @a subgraph.
+/// @param flags - binary features of the Fuse Dims Node. No supported flags
+///                are currently defined.
+enum xnn_status xnn_define_fuse_dims(  //
+    xnn_subgraph_t subgraph,                  //
+    size_t axis,                       //
+    size_t axes_count,                        //
+    uint32_t input_id,                        //
+    uint32_t output_id,                       //
+    uint32_t flags);
+
+/// Define a Split Dims Node with and add it to a Subgraph.
+///
+/// Given an input Tensor of shape `[a, b, c]` and @a axis = 1,
+/// @a num_splits = 3, and @a splits = `[3, 0, 2]`, this node reshapes the
+/// Tensor to the shape `[a, 3, b / (3 * 2), 2, c]`, i.e. the first zero in
+/// @a splits is replaced with the original dimension divided by the product of
+/// the non-zero entries of @a splits. Note that if the original dimension is
+/// not an integer multiple of the product of non-zero entries of @a splits, an
+/// error is returned.
+///
+/// @param subgraph - a Subgraph object that will own the created Node.
+/// @param axis - The index of the first dimension to split.
+/// @param num_splits - The number of dimensions in which to split the given
+///                     @a axis.
+/// @param splits - The size of the dimensions in which to split the given
+///                 @a axis.
+/// @param input_id - Value ID for the input tensor. The input tensor must be
+///                   defined in the @a subgraph.
+/// @param output_id - Value ID for the output tensor. The output tensor must be
+///                    defined in the @a subgraph, and its
+///                    shape must match the shape of the input tensor with
+///                    padding.
+/// @param flags - binary features of the Split Dims Node. No supported flags
+///                are currently defined.
+enum xnn_status xnn_define_split_dim(  //
+    xnn_subgraph_t subgraph,                   //
+    size_t axis,                               //
+    size_t num_splits,                         //
+    const size_t* splits,                      //
+    uint32_t input_id,                         //
+    uint32_t output_id,                        //
+    uint32_t flags);
 
 /// Define a Mean Node and add it to a Subgraph.
 ///
@@ -1442,6 +1505,8 @@ enum xnn_reduce_operator {
   xnn_reduce_invalid = -1,
   xnn_reduce_sum,
   xnn_reduce_mean,
+  xnn_reduce_max,
+  xnn_reduce_min,
 };
 
 /// Define a Reduce Node and add it to a Subgraph.
@@ -1493,6 +1558,28 @@ enum xnn_status xnn_define_static_reduce_v2(        //
     uint32_t output_id,                             //
     uint32_t flags);
 
+/// Define a n-Input Concatenate Node and add it to a Subgraph.
+///
+/// The n-Input Concatenate Node concatenates 'n' tensors along a specified axis.
+///
+/// @param subgraph - a Subgraph object that will own the created Node.
+/// @param axis - the axis to concatenate the two input tensors along. If this is less than zero, the number of
+///               dimensions is added to it.
+/// @param num_inputs - The number of input tensors to concatenate. Must be greater than or equal to 2.
+/// @param inputs - An array of Value IDs representing the input tensors. Each tensor must be an N-dimensional tensor defined in the @a subgraph.
+///                 All input tensors must have identical dimensions, except for the concatenation axis.
+/// @param output_id - Value ID for the output tensor. The output tensor must be a N-dimensional tensor defined
+///                    in the @a subgraph with each dimension equal to the dimension of both inputs, except the axis
+///                    dimension, where it is the sum of the corresponding dimensions of both inputs.
+/// @param flags - binary features of the Concatenate Node. No supported flags are currently defined.
+enum xnn_status xnn_define_concatenate(
+  xnn_subgraph_t subgraph,
+  int32_t axis,
+  size_t num_inputs,
+  const uint32_t* inputs,
+  uint32_t output_id,
+  uint32_t flags);
+
 /// Define a 2-Input Concatenate Node and add it to a Subgraph.
 ///
 /// The 2-Input Concatenate Node concatenates two tensors along a specified axis.
@@ -1510,7 +1597,7 @@ enum xnn_status xnn_define_static_reduce_v2(        //
 ///                    in the @a subgraph with each dimension equal to the dimension of both inputs, except the axis
 ///                    dimension, where it is the sum of the corresponding dimensions of both inputs.
 /// @param flags - binary features of the Concatenate Node. No supported flags are currently defined.
-enum xnn_status xnn_define_concatenate2(
+XNN_DEPRECATED enum xnn_status xnn_define_concatenate2(
   xnn_subgraph_t subgraph,
   int32_t axis,
   uint32_t input1_id,
@@ -1538,7 +1625,7 @@ enum xnn_status xnn_define_concatenate2(
 ///                    in the @a subgraph with each dimension equal to the dimension of all inputs, except the axis
 ///                    dimension, where it is the sum of the corresponding dimensions of all inputs.
 /// @param flags - binary features of the Concatenate Node. No supported flags are currently defined.
-enum xnn_status xnn_define_concatenate3(
+XNN_DEPRECATED enum xnn_status xnn_define_concatenate3(
   xnn_subgraph_t subgraph,
   int32_t axis,
   uint32_t input1_id,
@@ -1570,7 +1657,7 @@ enum xnn_status xnn_define_concatenate3(
 ///                    in the @a subgraph with each dimension equal to the dimension of all inputs, except the axis
 ///                    dimension, where it is the sum of the corresponding dimensions of all inputs.
 /// @param flags - binary features of the Concatenate Node. No supported flags are currently defined.
-enum xnn_status xnn_define_concatenate4(
+XNN_DEPRECATED enum xnn_status xnn_define_concatenate4(
   xnn_subgraph_t subgraph,
   int32_t axis,
   uint32_t input1_id,
@@ -1605,7 +1692,7 @@ enum xnn_status xnn_define_concatenate4(
 /// @param output_id - Value ID for the output tensor. The output tensor must be a N-dimensional tensor defined
 ///                    in the @a subgraph with each dimension equal to the dimension of all inputs, except the axis
 ///                    dimension, where it is the sum of the corresponding dimensions of all inputs.
-enum xnn_status xnn_define_concatenate5(
+XNN_DEPRECATED enum xnn_status xnn_define_concatenate5(
   xnn_subgraph_t subgraph,
   int32_t axis,
   uint32_t input1_id,
@@ -1647,6 +1734,31 @@ enum xnn_status xnn_define_copy(
   uint32_t output_id,
   uint32_t flags);
 
+/// Define a n-Output Split Node and add it to a Subgraph.
+///
+/// The n-Output Split Node splits an input tensor into n output tensors along a specified axis evenly.
+///
+/// @param subgraph - a Subgraph object that will own the created Node.
+/// @param split_dim - the dimension to split the input tensor along. If this is less than zero, the number of
+///                    dimensions is added to it.
+/// @param input_id - Value ID for the input tensor. The input tensor must be an N-dimensional tensor defined in the @a
+///                   subgraph.
+/// @param num_outputs - The number of output tensors to generate. The input tensor will be evenly split into
+///                      this number of output tensors along the `split_dim`. Each output tensor will have
+///                      the same dimensions as the input tensor, except for the `split_dim`, which will be
+///                      divided evenly between the outputs.
+/// @param outputs - An array of Value IDs for the output tensors. Each output tensor must be an N-dimensional
+///                  tensor defined in the @a subgraph with the same shape as the input tensor, except along the
+///                  `split_dim` dimension, which will be split evenly among the output tensors. The number of
+///                  output tensors corresponds to the value of `num_outputs`.
+enum xnn_status xnn_define_even_split(
+  xnn_subgraph_t subgraph,
+  int32_t split_dim,
+  uint32_t input_id,
+  size_t num_outputs,
+  const uint32_t* outputs,
+  uint32_t flags);
+
 /// Define a 2-Output Split Node and add it to a Subgraph.
 ///
 /// The 2-Output Split Node splits an input tensor into two output tensors along a specified axis evenly.
@@ -1663,7 +1775,7 @@ enum xnn_status xnn_define_copy(
 ///                     defined in the @a subgraph with each dimension, except the axis, equal to the corresponding
 ///                     dimension of the first output. The split_dim dimension is half of the input's split_dim.
 /// @param flags - binary features of the Split Node. No supported flags are currently defined.
-enum xnn_status xnn_define_even_split2(
+XNN_DEPRECATED enum xnn_status xnn_define_even_split2(
   xnn_subgraph_t subgraph,
   int32_t split_dim,
   uint32_t input_id,
@@ -1692,7 +1804,7 @@ enum xnn_status xnn_define_even_split2(
 ///                     dimension of the second and third output. The split_dim dimension is one third of the input's
 ///                     split_dim.
 /// @param flags - binary features of the Split Node. No supported flags are currently defined.
-enum xnn_status xnn_define_even_split3(
+XNN_DEPRECATED enum xnn_status xnn_define_even_split3(
   xnn_subgraph_t subgraph,
   int32_t split_dim,
   uint32_t input_id,
@@ -1726,7 +1838,7 @@ enum xnn_status xnn_define_even_split3(
 ///                     dimension of the other output tensors. The split_dim dimension is one fourth of the input's
 ///                     split_dim.
 /// @param flags - binary features of the Split Node. No supported flags are currently defined.
-enum xnn_status xnn_define_even_split4(
+XNN_DEPRECATED enum xnn_status xnn_define_even_split4(
   xnn_subgraph_t subgraph,
   int32_t split_dim,
   uint32_t input_id,
@@ -2632,6 +2744,9 @@ enum xnn_status xnn_create_batch_matrix_multiply_nc_f16(
   uint32_t flags,
   xnn_operator_t* batch_matrix_multiply_op);
 
+enum xnn_status xnn_create_batch_matrix_multiply_nc_bf16_f32(
+    uint32_t flags, xnn_operator_t* batch_matrix_multiply_op);
+
 enum xnn_status xnn_create_batch_matrix_multiply_nc_f16_const_weights(
     size_t batch_size_b, size_t k, size_t n, const void* data_b, uint32_t flags,
     xnn_operator_t* batch_matrix_multiply_op);
@@ -2643,6 +2758,16 @@ enum xnn_status xnn_reshape_batch_matrix_multiply_nc_f16(
     pthreadpool_t threadpool);
 
 enum xnn_status xnn_setup_batch_matrix_multiply_nc_f16(
+    xnn_operator_t batch_matrix_multiply_op, void* workspace,
+    const void* input_a, const void* input_b, void* output);
+
+enum xnn_status xnn_reshape_batch_matrix_multiply_nc_bf16_f32(
+    xnn_operator_t batch_matrix_multiply_op, size_t num_batch_dims,
+    const size_t* batch_dims_a, const size_t* batch_dims_b, size_t m, size_t k,
+    size_t n, size_t* workspace_size, size_t* workspace_alignment,
+    pthreadpool_t threadpool);
+
+enum xnn_status xnn_setup_batch_matrix_multiply_nc_bf16_f32(
     xnn_operator_t batch_matrix_multiply_op, void* workspace,
     const void* input_a, const void* input_b, void* output);
 
@@ -4686,9 +4811,6 @@ enum xnn_status xnn_create_unpooling2d_nhwc_x32(
   uint32_t input_padding_left,
   uint32_t pooling_height,
   uint32_t pooling_width,
-  size_t channels,
-  size_t input_pixel_stride,
-  size_t output_pixel_stride,
   uint32_t flags,
   xnn_operator_t* unpooling_op_out);
 
@@ -4697,6 +4819,9 @@ enum xnn_status xnn_reshape_unpooling2d_nhwc_x32(
   size_t batch_size,
   size_t input_height,
   size_t input_width,
+  size_t channels,
+  size_t input_pixel_stride,
+  size_t output_pixel_stride,
   size_t* output_height_out,
   size_t* output_width_out,
   pthreadpool_t threadpool);

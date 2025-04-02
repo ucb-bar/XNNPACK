@@ -12,8 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/unaligned.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/unaligned.h"
 
 // SIMD vector type for u8 using NEON.
 typedef uint8x16_t xnn_simd_u8_t;
@@ -31,6 +31,24 @@ static XNN_INLINE xnn_simd_u8_t xnn_add_u8(xnn_simd_u8_t a, xnn_simd_u8_t b) {
 
 static XNN_INLINE xnn_simd_u8_t xnn_max_u8(xnn_simd_u8_t a, xnn_simd_u8_t b) {
   return vmaxq_u8(a, b);
+}
+
+static XNN_INLINE uint8_t xnn_horizontal_max_u8(xnn_simd_u8_t a) {
+  uint8x8_t max0 = vpmax_u8(vget_low_u8(a), vget_high_u8(a));
+  max0 = vpmax_u8(max0, max0);
+  max0 = vpmax_u8(max0, max0);
+  max0 = vpmax_u8(max0, max0);
+
+  return vget_lane_u8(max0, 0);
+}
+
+static XNN_INLINE uint8_t xnn_horizontal_min_u8(xnn_simd_u8_t a) {
+  uint8x8_t min0 = vpmin_u8(vget_low_u8(a), vget_high_u8(a));
+  min0 = vpmin_u8(min0, min0);
+  min0 = vpmin_u8(min0, min0);
+  min0 = vpmin_u8(min0, min0);
+
+  return vget_lane_u8(min0, 0);
 }
 
 static XNN_INLINE xnn_simd_u8_t xnn_min_u8(xnn_simd_u8_t a, xnn_simd_u8_t b) {
@@ -61,14 +79,6 @@ static XNN_INLINE void xnn_store_u8(uint8_t* ptr, xnn_simd_u8_t v) {
 
 static XNN_INLINE xnn_simd_u8_t xnn_set1_u8(uint8_t v) { return vdupq_n_u8(v); }
 
-static XNN_INLINE xnn_simd_u8_t xnn_set1_or_load_u8(const uint8_t* v) {
-#if XNN_ARCH_X86
-  return vld1q_u8(v);
-#else
-  return vdupq_n_u8(*v);
-#endif
-}
-
 // Tail load/store operations.
 
 static XNN_INLINE xnn_simd_u8_t
@@ -86,21 +96,36 @@ static XNN_INLINE xnn_simd_u8_t xnn_load_tail_safe_u8(const uint8_t* input,
   XNN_ALIGN(16) uint8_t padded[16];
   uint8_t* d = &padded[0];
   switch (num_elements) {
-  case 15: *d++ = *input++;
-  case 14: *d++ = *input++;
-  case 13: *d++ = *input++;
-  case 12: *d++ = *input++;
-  case 11: *d++ = *input++;
-  case 10: *d++ = *input++;
-  case 9: *d++ = *input++;
-  case 8: *d++ = *input++;
-  case 7: *d++ = *input++;
-  case 6: *d++ = *input++;
-  case 5: *d++ = *input++;
-  case 4: *d++ = *input++;
-  case 3: *d++ = *input++;
-  case 2: *d++ = *input++;
-  case 1: *d++ = *input++;
+    case 15:
+      *d++ = *input++;
+    case 14:
+      *d++ = *input++;
+    case 13:
+      *d++ = *input++;
+    case 12:
+      *d++ = *input++;
+    case 11:
+      *d++ = *input++;
+    case 10:
+      *d++ = *input++;
+    case 9:
+      *d++ = *input++;
+    case 8:
+      *d++ = *input++;
+    case 7:
+      *d++ = *input++;
+    case 6:
+      *d++ = *input++;
+    case 5:
+      *d++ = *input++;
+    case 4:
+      *d++ = *input++;
+    case 3:
+      *d++ = *input++;
+    case 2:
+      *d++ = *input++;
+    case 1:
+      *d++ = *input++;
   }
   return vld1q_u8(&padded[0]);
 }

@@ -10,20 +10,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/allocator.h"
-#include "xnnpack/common.h"
-#include "xnnpack/compute.h"
-#include "xnnpack/config-types.h"
-#include "xnnpack/config.h"
-#include "xnnpack/indirection.h"
-#include "xnnpack/log.h"
-#include "xnnpack/math.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator-utils.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/params.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/allocator.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/compute.h"
+#include "src/xnnpack/config-types.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/indirection.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator-utils.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/params.h"
+#include <pthreadpool.h>
 
 static inline size_t compute_output_dimension(
     size_t padded_input_dimension,
@@ -69,13 +69,6 @@ enum xnn_status xnn_create_argmax_pooling2d_nhwc_f32(
       "failed to create %s operator with %" PRIu32 "x%" PRIu32 " pooling size: "
       "pooling size dimensions must be non-zero",
       xnn_operator_type_to_string(xnn_operator_type_argmax_pooling_nhwc_f32), pooling_width, pooling_height);
-    goto error;
-  }
-
-  if (pooling_size == 1) {
-    xnn_log_error(
-      "failed to create %s operator with 1 pooling element: 1x1 pooling is meaningless",
-      xnn_operator_type_to_string(xnn_operator_type_argmax_pooling_nhwc_f32));
     goto error;
   }
 

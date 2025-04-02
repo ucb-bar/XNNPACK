@@ -3,7 +3,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "xnnpack/assembly.h"
+#include "src/xnnpack/assembly.h"
 
 BEGIN_FUNCTION xnn_bf16_f32_gemm_minmax_ukernel_1x64c2__asm_amd64_avx512bf16_broadcast
 
@@ -92,19 +92,19 @@ BEGIN_FUNCTION xnn_bf16_f32_gemm_minmax_ukernel_1x64c2__asm_amd64_avx512bf16_bro
       add r9, 256
       vbroadcastss zmm2, DWORD PTR [rcx + r11]
       vpslld zmm2, zmm2, 16
-      vpsrad zmm2, zmm2, 16
+      vpsrld zmm2, zmm2, 16
       vdpbf16ps  zmm11, zmm2, zmm7
 
       vpslld zmm2, zmm2, 16
-      vpsrad zmm2, zmm2, 16
+      vpsrld zmm2, zmm2, 16
       vdpbf16ps  zmm12, zmm2, zmm8
 
       vpslld zmm2, zmm2, 16
-      vpsrad zmm2, zmm2, 16
+      vpsrld zmm2, zmm2, 16
       vdpbf16ps  zmm13, zmm2, zmm9
 
       vpslld zmm2, zmm2, 16
-      vpsrad zmm2, zmm2, 16
+      vpsrld zmm2, zmm2, 16
       vdpbf16ps  zmm14, zmm2, zmm10
 
 .Linner_loop_end:

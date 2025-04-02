@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/common.h"
+#include "src/xnnpack/common.h"
 
 // SIMD vector type for u8 using SCALAR.
 typedef uint8_t xnn_simd_u8_t;
@@ -34,6 +34,10 @@ static XNN_INLINE xnn_simd_u8_t xnn_max_u8(xnn_simd_u8_t a, xnn_simd_u8_t b) {
   return a < b ? b : a;
 }
 
+static XNN_INLINE uint8_t xnn_horizontal_min_u8(xnn_simd_u8_t a) { return a; }
+
+static XNN_INLINE uint8_t xnn_horizontal_max_u8(xnn_simd_u8_t a) { return a; }
+
 static XNN_INLINE xnn_simd_u8_t xnn_xor_u8(xnn_simd_u8_t a, xnn_simd_u8_t b) {
   return a ^ b;
 }
@@ -52,13 +56,14 @@ static XNN_INLINE void xnn_store_u8(uint8_t *ptr, xnn_simd_u8_t v) { *ptr = v; }
 
 static XNN_INLINE xnn_simd_u8_t xnn_set1_u8(uint8_t v) { return v; }
 
-static XNN_INLINE xnn_simd_u8_t xnn_set1_or_load_u8(const uint8_t *v) {
-  return *v;
-}
-
 // Tail load/store operations.
 static XNN_INLINE xnn_simd_u8_t xnn_load_tail_u8(const uint8_t *input,
                                                  size_t num_elements) {
+  return *input;
+}
+
+static XNN_INLINE xnn_simd_u8_t xnn_load_tail_safe_u8(const uint8_t *input,
+                                                      size_t num_elements) {
   return *input;
 }
 

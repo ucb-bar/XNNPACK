@@ -9,22 +9,22 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/allocator.h"
-#include "xnnpack/common.h"
-#include "xnnpack/compute.h"
-#include "xnnpack/config-types.h"
-#include "xnnpack/config.h"
-#include "xnnpack/log.h"
-#include "xnnpack/math.h"
-#include "xnnpack/microfnptr.h"
-#include "xnnpack/microkernel-type.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator-utils.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/params.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/allocator.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/compute.h"
+#include "src/xnnpack/config-types.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microfnptr.h"
+#include "src/xnnpack/microkernel-type.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator-utils.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/params.h"
+#include <pthreadpool.h>
 
 static enum xnn_status create_scaled_dot_product_attention_nhtc(
   enum xnn_attention_logits_cap_type cap_type,
@@ -32,7 +32,7 @@ static enum xnn_status create_scaled_dot_product_attention_nhtc(
   enum xnn_operator_type operator_type,
   const struct xnn_gemm_config* gemm_config,
   const struct xnn_raddstoreexpminusmax_config* raddstoreexpminusmax_config,
-  const struct xnn_rmax_config* rmax_config,
+  const struct xnn_reduce_config* rmax_config,
   const struct xnn_binary_elementwise_config* vadd_config,
   const struct xnn_binary_elementwise_config* vmul_config,
   const struct xnn_unary_elementwise_config* vtanh_config,
@@ -149,7 +149,7 @@ enum xnn_status xnn_create_scaled_dot_product_attention_nhtc_f16(
     raddstoreexpminusmax_config->init.f16(&expminus_params);
   }
 
-  const struct xnn_rmax_config* rmax_config = xnn_init_f16_rmax_config();
+  const struct xnn_reduce_config* rmax_config = xnn_init_f16_rmax_config();
   if (rmax_config == NULL) {
     xnn_log_error(
       "failed to create %s operator: unsupported hardware configuration",
@@ -256,7 +256,7 @@ enum xnn_status xnn_create_scaled_dot_product_attention_nhtc_f32(
 
   struct xnn_f32_default_params expminus_params;
 
-  const struct xnn_rmax_config* rmax_config = xnn_init_f32_rmax_config();
+  const struct xnn_reduce_config* rmax_config = xnn_init_f32_rmax_config();
   if (rmax_config == NULL) {
     xnn_log_error(
       "failed to create %s operator: unsupported hardware configuration",

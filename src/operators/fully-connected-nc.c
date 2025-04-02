@@ -15,26 +15,26 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/allocator.h"
-#include "xnnpack/cache.h"
-#include "xnnpack/common.h"
-#include "xnnpack/compute.h"
-#include "xnnpack/config.h"
-#include "xnnpack/log.h"
-#include "xnnpack/math.h"
-#include "xnnpack/microfnptr.h"
-#include "xnnpack/microkernel-type.h"
-#include "xnnpack/microkernel-utils.h"
-#include "xnnpack/microparams-init.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator-utils.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/pack.h"
-#include "xnnpack/packq.h"
-#include "xnnpack/params.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/allocator.h"
+#include "src/xnnpack/cache.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/compute.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microfnptr.h"
+#include "src/xnnpack/microkernel-type.h"
+#include "src/xnnpack/microkernel-utils.h"
+#include "src/xnnpack/microparams-init.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator-utils.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/pack.h"
+#include "src/xnnpack/packq.h"
+#include "src/xnnpack/params.h"
+#include <pthreadpool.h>
 
 static enum xnn_status create_fully_connected_nc(
     size_t input_channels,
@@ -53,7 +53,6 @@ static enum xnn_status create_fully_connected_nc(
     xnn_packw_gemm_gio_ukernel_fn pack_gemm_gio_w,
     xnn_packw_gemm_goi_ukernel_fn pack_gemm_goi_w,
     const void* packing_params,
-    int packed_weights_padding_byte,
     size_t extra_weights_bytes,
     xnn_init_qs8_qc8w_scale_params_fn init_scale_params,
     const float* scale_params,
@@ -177,7 +176,7 @@ static enum xnn_status create_fully_connected_nc(
 
   if (cache_offset == XNN_CACHE_NOT_FOUND) {
     void* weights_ptr = xnn_get_pointer_to_write_weights(
-        fully_connected_op, aligned_total_weights_size, packed_weights_padding_byte);
+        fully_connected_op, aligned_total_weights_size);
     if (weights_ptr == NULL) {
       xnn_log_error(
         "failed to allocate %zu bytes for %s operator packed weights",
@@ -186,6 +185,10 @@ static enum xnn_status create_fully_connected_nc(
     }
     xnn_log_debug("allocated %zu bytes for packed weights in %s operator",
       aligned_total_weights_size, xnn_operator_type_to_string(operator_type));
+    if (extra_weights_bytes > 0) {
+      // TODO(b/402602597): We shouldn't need this initialization.
+      memset(weights_ptr, 0, aligned_total_weights_size);
+    }
 
     if (gemm_config->pack_weights_and_biases) {
       gemm_config->pack_weights_and_biases(
@@ -229,8 +232,8 @@ static enum xnn_status create_fully_connected_nc(
         void* weights = (void*) ((uintptr_t) weights_ptr +
           gemm_config->nr * ((k_stride << log2_filter_element_size) + bias_element_size));
         init_kernel_scale_params(
-            output_channels, gemm_config->nr, gemm_config->nr,
-            gemm_config->nr * weights_stride, gemm_config->nr * weights_stride, 0,
+            output_channels, gemm_config->nr,
+            gemm_config->nr * weights_stride,
             kernel_scale_params, weights);
       }
 
@@ -242,8 +245,8 @@ static enum xnn_status create_fully_connected_nc(
           weights = (void*) ((uintptr_t) weights + gemm_config->nr * sizeof(float));
         }
         init_scale_params(
-            output_channels, gemm_config->nr, gemm_config->nr,
-            gemm_config->nr * weights_stride, gemm_config->nr * weights_stride, 0,
+            output_channels, gemm_config->nr,
+            gemm_config->nr * weights_stride,
             scale_params, weights);
       }
     }
@@ -359,7 +362,6 @@ enum xnn_status create_fully_connected_nc_f16(
     pack_gemm_gio_w,
     pack_gemm_goi_w,
     /*packing_params=*/NULL,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/0,
     /*init_scale_params=*/NULL, /*scale_params=*/NULL,
     /*init_kernel_scale_params=*/NULL, /*kernel_scale_params=*/NULL,
@@ -494,7 +496,6 @@ enum xnn_status create_fully_connected_nc_qx8_f16_qc4w(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float) * 2,
     /*init_scale_params=*/xnn_init_qs8_qc8w_scale_fp32_params,
     /*scale_params=*/bias,
@@ -667,7 +668,6 @@ enum xnn_status xnn_create_fully_connected_nc_qd8_f16_qb4w(
     /*pack_gemm_gio_w,=*/ NULL,
     /*pack_gemm_goi_w=*/ NULL,
     /*packing_params=*/&packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float),
     /*init_scale_params=*/NULL, /*scale_params=*/NULL,
     /*init_kernel_scale_params=*/NULL, /*kernel_scale_params=*/NULL,
@@ -758,7 +758,6 @@ enum xnn_status create_fully_connected_nc_qx8_f32_qc4w(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float) * 2,
     /*init_scale_params=*/xnn_init_qs8_qc8w_scale_fp32_params,
     /*scale_params=*/bias,
@@ -876,7 +875,6 @@ static enum xnn_status xnn_create_fully_connected_nc_qp8_f32_qcxw(
       (xnn_packw_gemm_gio_ukernel_fn)gemm_config->pack_gemm_gio,
       (xnn_packw_gemm_goi_ukernel_fn)gemm_config->pack_gemm_goi,
       packing_params,
-      /*packed_weights_padding_byte=*/0,
       /*extra_weights_bytes=*/0,
       /*init_scale_params=*/NULL,
       /*scale_params=*/bias,
@@ -1073,11 +1071,10 @@ enum xnn_status xnn_create_fully_connected_nc_qp8_f32_qb4w(
     /*pack_gemm_gio_w,=*/ NULL,
     /*pack_gemm_goi_w=*/ NULL,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/0,
-    /*init_scale_params=*/NULL, 
+    /*init_scale_params=*/NULL,
     /*scale_params=*/NULL,
-    /*init_kernel_scale_params=*/NULL, 
+    /*init_kernel_scale_params=*/NULL,
     /*kernel_scale_params=*/NULL,
     &params, sizeof(params),
     gemm_config, gemm_ukernels,
@@ -1196,7 +1193,6 @@ enum xnn_status create_fully_connected_nc_qx8_f32_qb4w(
     /*pack_gemm_gio_w,=*/ NULL,
     /*pack_gemm_goi_w=*/ NULL,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float),
     /*init_scale_params=*/NULL, /*scale_params=*/NULL,
     /*init_kernel_scale_params=*/NULL, /*kernel_scale_params=*/NULL,
@@ -1325,7 +1321,6 @@ enum xnn_status create_fully_connected_nc_qdx8_f32_qc8w(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float) * 2,
     xnn_init_qs8_qc8w_scale_fp32_params, bias,
     xnn_init_qs8_qc8w_scale_fp32_params, kernel_scale,
@@ -1454,7 +1449,6 @@ enum xnn_status create_fully_connected_nc_qx8_f16_qc8w(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float) * 2,
     xnn_init_qs8_qc8w_scale_fp32_params, bias,
     xnn_init_qs8_qc8w_scale_fp32_params, kernel_scale,
@@ -1609,7 +1603,6 @@ enum xnn_status create_fully_connected_nc_f32(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     /*packing_params=*/NULL,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/0,
     /*init_scale_params=*/NULL, /*scale_params=*/NULL,
     /*init_kernel_scale_params=*/NULL, /*kernel_scale_params=*/NULL,
@@ -1666,10 +1659,21 @@ enum xnn_status xnn_create_fully_connected_nc_f32(
   }
 
   const struct xnn_gemm_config* gemm_nr2_config = xnn_init_f32_gemm_nr2_config();
-  if (gemm_config->nr > output_channels) {
-    // Default microkernel is suboptimal, use a microkernel that better supports less output channels.
-    if (gemm_nr2_config != NULL && gemm_nr2_config->minmax.gemm[gemm_nr2_config->mr-1].function[XNN_UARCH_DEFAULT] != NULL) {
-      gemm_config = gemm_nr2_config;
+
+  // Select microkernel configuration based on output channels
+  if (gemm_nr2_config != NULL) {
+    const size_t nr = gemm_config->nr;
+    const size_t nr2 = gemm_nr2_config->nr;
+    size_t nr_overcompute = (nr - output_channels % nr) % nr;
+    size_t nr2_overcompute = (nr2 - output_channels % nr2) % nr2;
+    // Switch to alternative microkernel when:
+    // 1. Alternative microkernel better supports less output channels, or
+    // 2. Alternative microkernel has less overcompute and default wastes >1% of output channels
+    if (nr > output_channels || (nr2_overcompute < nr_overcompute && nr_overcompute * 100 > output_channels)) {
+      // Default microkernel is suboptimal, use a microkernel that better supports less output channels.
+      if (gemm_nr2_config->minmax.gemm[gemm_nr2_config->mr-1].function[XNN_UARCH_DEFAULT] != NULL ) {
+        gemm_config = gemm_nr2_config;
+      }
     }
   }
 
@@ -1786,7 +1790,6 @@ enum xnn_status xnn_create_fully_connected_nc_f32_qc4w(
     (xnn_packw_gemm_gio_ukernel_fn) NULL,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     /*packing_params=*/NULL,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float),
     /*init_scale_params=*/xnn_init_qs8_qc8w_scale_fp32_params,
     /*scale_params=*/kernel_scale,
@@ -1876,7 +1879,6 @@ enum xnn_status xnn_create_fully_connected_nc_f32_qc8w(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     /*packing_params=*/NULL,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float),
     /*init_scale_params=*/xnn_init_qs8_qc8w_scale_fp32_params,
     /*scale_params=*/kernel_scale,
@@ -1974,7 +1976,6 @@ enum xnn_status xnn_create_fully_connected_nc_qs8(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float),
     /*init_scale_params=*/xnn_init_qs8_to_qs8_qc8w_scale_fp32_params,
     /*scale_params=*/&requantization_scale,
@@ -2080,7 +2081,6 @@ enum xnn_status create_fully_connected_nc_qx8_qc8w(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     &packing_params,
-    /*packed_weights_padding_byte=*/0,
     /*extra_weights_bytes=*/sizeof(float),
     /*init_scale_params=*/xnn_init_qs8_qc8w_scale_fp32_params,
     /*scale_params=*/requantization_scale,
@@ -2234,7 +2234,6 @@ enum xnn_status xnn_create_fully_connected_nc_qu8(
     (xnn_packw_gemm_gio_ukernel_fn) gemm_config->pack_gemm_gio,
     (xnn_packw_gemm_goi_ukernel_fn) gemm_config->pack_gemm_goi,
     &packing_params,
-    /*packed_weights_padding_byte=*/kernel_zero_point,
     /*extra_weights_bytes=*/0,
     /*init_scale_params=*/NULL, /*scale_params=*/NULL,
     /*init_kernel_scale_params=*/NULL, /*kernel_scale_params=*/NULL,

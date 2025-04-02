@@ -44,10 +44,6 @@ def xnnpack_configurable_defines():
         ["XNN_ENABLE_MEMOPT=1"],
         ["XNN_ENABLE_MEMOPT=1"],
     ) + xnnpack_select_if(
-        ":gemm_m_specialization_enabled",
-        ["XNN_ENABLE_GEMM_M_SPECIALIZATION=1"],
-        ["XNN_ENABLE_GEMM_M_SPECIALIZATION=0"],
-    ) + xnnpack_select_if(
         ":sparse_enabled",
         ["XNN_ENABLE_SPARSE=1"],
         ["XNN_ENABLE_SPARSE=0"],
@@ -241,6 +237,21 @@ _XNNPACK_SIMD_ARCH_COPT_MAPPING = {
             "-mavx512vl",
         ],
     ),
+    "avx512fp16": xnnpack_select_if(
+        "//:avx512fp16_enabled",
+        [
+            "-mf16c",
+            "-mfma",
+            "-mavx512f",
+            "-mavx512cd",
+            "-mavx512bw",
+            "-mavx512dq",
+            "-mavx512vl",
+            "-mavx512vnni",
+            "-mgfni",
+            "-mavx512fp16",
+        ],
+    ),
     "fma3": xnnpack_select_if("//build_config:x86", ["-mfma"]),
     "hvx": xnnpack_select_if("//build_config:hexagon", ["-mhvx-ieee-fp"]),
     "neon": select({
@@ -271,7 +282,7 @@ def xnnpack_simd_f32_archs():
     return ["avx", "avx2", "avx512f", "fma3", "hvx", "neon", "scalar", "sse2", "wasmsimd"]
 
 def xnnpack_simd_f16_archs():
-    return ["scalar", "neonfp16arith"]
+    return ["scalar", "neonfp16arith", "avx512fp16"]
 
 def xnnpack_simd_s16_archs():
     return ["avx2", "avx512skx", "neon", "scalar", "sse41", "wasmsimd"]
@@ -349,6 +360,7 @@ XNNPACK_PARAMS_FOR_ARCH = {
         copts = [
             "-fno-fast-math",
             "-fno-math-errno",
+            "-mfp16",
         ],
     ),
     "wasm32": _create_params(
