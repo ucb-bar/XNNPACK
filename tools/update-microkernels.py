@@ -66,6 +66,7 @@ _ISA_LIST = frozenset({
     'neonv8',
     'rvv',
     'rvvfp16arith',
+    'gemmini',
     'scalar',
     'sse',
     'sse2',
