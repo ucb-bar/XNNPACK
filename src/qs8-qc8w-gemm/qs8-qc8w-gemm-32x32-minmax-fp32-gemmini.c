@@ -7,8 +7,8 @@
 #include <assert.h>
 #include <riscv_vector.h>
 
+#include "gemmini_params_int8.h"
 #include "gemmini.h"
-#include "gemmini_params.h"
 #include "src/xnnpack/gemm.h"
 #include "src/xnnpack/math.h"
 

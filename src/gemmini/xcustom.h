@@ -100,7 +100,7 @@
   *
   * This will produce the following inline assembly:
   *
-  *     asm volatile(
+  *     __asm__ volatile(
   *         ".insn r CUSTOM_2, 0x7, 42, %0, %1, %2"
   *         : "=r"(rd)
   *         : "r"(rs1), "r"(rs2));
@@ -114,7 +114,7 @@
   */
 #define ROCC_INSTRUCTION_R_R_R(x, rd, rs1, rs2, func7)                               \
   {                                                                                  \
-    asm volatile(                                                                    \
+    __asm__ volatile(                                                                    \
         ".insn r " STR(CAT(CUSTOM_, x)) ", " STR(0x7) ", " STR(func7) ", %0, %1, %2" \
         : "=r"(rd)                                                                   \
         : "r"(rs1), "r"(rs2));                                                       \
@@ -134,7 +134,7 @@
   *
   * This will produce the following inline assembly:
   *
-  *     asm volatile(
+  *     __asm__ volatile(
   *         ".insn r CUSTOM_3, 0x7, 42, %0, %1, %2"
   *         :: "r"(rs1), "r"(rs2));
   *
@@ -146,7 +146,7 @@
   */
 #define ROCC_INSTRUCTION_0_R_R(x, rs1, rs2, func7)                                   \
   {                                                                                  \
-    asm volatile(                                                                    \
+    __asm__ volatile(                                                                    \
         ".insn r " STR(CAT(CUSTOM_, x)) ", " STR(0x3) ", " STR(func7) ", x0, %0, %1" \
         :                                                                            \
         : "r"(rs1), "r"(rs2));                                                       \
@@ -156,13 +156,13 @@
 // Macro to pass rs2_ as an immediate
 /*
 #define ROCC_INSTRUCTION_R_R_I(XCUSTOM_, rd_, rs1_, rs2_, funct_) \
-  asm volatile (XCUSTOM_" %[rd], %[rs1], %[rs2], %[funct]"        \
+  __asm__ volatile (XCUSTOM_" %[rd], %[rs1], %[rs2], %[funct]"        \
                 : [rd] "=r" (rd_)                                 \
                 : [rs1] "r" (rs1_), [rs2] "i" (rs2_), [funct] "i" (funct_))
 
 // Macro to pass rs1_ and rs2_ as immediates
 #define ROCC_INSTRUCTION_R_I_I(XCUSTOM_, rd_, rs1_, rs2_, funct_) \
-  asm volatile (XCUSTOM_" %[rd], %[rs1], %[rs2], %[funct]"        \
+  __asm__ volatile (XCUSTOM_" %[rd], %[rs1], %[rs2], %[funct]"        \
                 : [rd] "=r" (rd_)                                 \
                 : [rs1] "i" (rs1_), [rs2] "i" (rs2_), [funct] "i" (funct_))
 */

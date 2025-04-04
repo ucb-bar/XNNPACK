@@ -12,7 +12,6 @@
 #include <limits.h>
 #include <stdbool.h>
 
-#include "gemmini_params.h"
 
 #define GEMMINI_ASSERTIONS
 
@@ -289,7 +288,7 @@ static acc_scale_t_bits acc_scale_t_to_acc_scale_t_bits(acc_scale_t x) {
   ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, skip, 0, k_FLUSH)
 
 // fence
-#define gemmini_fence() asm volatile("fence")
+#define gemmini_fence() __asm__ volatile("fence")
 
 // Counter access
 #define gemmini_counter_access(rd, config_reg) \
@@ -339,7 +338,7 @@ static void counter_reset() {
   gemmini_counter_access(placeholder, config_reg);
 }
 
-int ceil_divide_int(int a, int b){
+inline int ceil_divide_int(int a, int b){
     int c = (a % b == 0) ? ((int)(a/b)) :(((int)(a/b)) + 1); 
     if(a < b) c = 1;
     return c;
