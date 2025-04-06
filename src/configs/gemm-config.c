@@ -839,6 +839,13 @@ static void init_f32_gemm_config(void) {
       f32_gemm_config.mr = 4;
       f32_gemm_config.nr = 4;
     }
+  #elif XNN_ARCH_RISCV && XNN_ENABLE_RISCV_GEMMINI
+    f32_gemm_config.minmax.gemm[XNN_MR_TO_INDEX(4)] = xnn_init_hmp_gemm_ukernel((xnn_gemm_ukernel_fn) xnn_f32_gemm_minmax_ukernel_4x4__gemmini);
+    f32_gemm_config.init.f32 = xnn_init_f32_minmax_scalar_params;
+    f32_gemm_config.pack_gemm_gio = (xnn_packw_gemm_gio_ukernel_fn) xnn_pack_f32_gemm_gio_w;
+    f32_gemm_config.pack_gemm_goi = (xnn_packw_gemm_goi_ukernel_fn) xnn_pack_f32_gemm_goi_w;
+    f32_gemm_config.mr = 4;
+    f32_gemm_config.nr = 4;
   #elif XNN_ARCH_RISCV && XNN_ENABLE_RISCV_VECTOR
     const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
     assert(hardware_config != NULL);
