@@ -895,203 +895,6 @@ static elem_t scale_and_sat(acc_t x, int act, acc_scale_t scale, acc_scale_t ber
 #define GEMMINI_ACC_SCALE(x, scale) (x)
 #endif
 
-static void matmul_cpu(bool transA, bool transB, size_t DIM_I, size_t DIM_J, size_t DIM_K,
-        const elem_t* A, const elem_t* B, const acc_t * D,
-        elem_t* C,
-        size_t stride_A, size_t stride_B, size_t stride_D, size_t stride_C,
-        scale_t A_scale_factor, scale_t B_scale_factor, scale_acc_t D_scale_factor,
-        int act, acc_scale_t scale, acc_scale_t bert_scale, bool repeating_bias) {
-
-  const int no_bias = D == NULL;
-  if (act != LAYERNORM && act != SOFTMAX && !transA && !transB && DIM_I % 4 == 0 && DIM_J % 4 == 0) {
-    for (size_t i = 0; i < DIM_I; i += 4) {
-      for (size_t j = 0; j < DIM_J; j += 4) {
-
-        acc_t result[4][4]; // = {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}};
-
-        for (size_t ii = 0; ii < 4; ii++)
-          for (size_t jj = 0; jj < 4; jj++) {
-            const size_t bias_row = repeating_bias ? 0 : i + ii;
-            result[ii][jj] = no_bias ? 0 :
-              GEMMINI_ACC_SCALE(*(D + bias_row*stride_D + j + jj), D_scale_factor);
-          }
-
-        for (size_t k = 0; k < DIM_K; k++) {
-          result[0][0] +=
-                GEMMINI_SCALE(*(A + i*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j), B_scale_factor);
-          result[0][1] +=
-                GEMMINI_SCALE(*(A + i*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+1), B_scale_factor);
-          result[0][2] +=
-                GEMMINI_SCALE(*(A + i*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+2), B_scale_factor);
-          result[0][3] +=
-                GEMMINI_SCALE(*(A + i*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+3), B_scale_factor);
-          result[1][0] +=
-                GEMMINI_SCALE(*(A + (i+1)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j), B_scale_factor);
-          result[1][1] +=
-                GEMMINI_SCALE(*(A + (i+1)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+1), B_scale_factor);
-          result[1][2] +=
-                GEMMINI_SCALE(*(A + (i+1)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+2), B_scale_factor);
-          result[1][3] +=
-                GEMMINI_SCALE(*(A + (i+1)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+3), B_scale_factor);
-          result[2][0] +=
-                GEMMINI_SCALE(*(A + (i+2)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j), B_scale_factor);
-          result[2][1] +=
-                GEMMINI_SCALE(*(A + (i+2)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+1), B_scale_factor);
-          result[2][2] +=
-                GEMMINI_SCALE(*(A + (i+2)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+2), B_scale_factor);
-          result[2][3] +=
-                GEMMINI_SCALE(*(A + (i+2)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+3), B_scale_factor);
-          result[3][0] +=
-                GEMMINI_SCALE(*(A + (i+3)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j), B_scale_factor);
-          result[3][1] +=
-                GEMMINI_SCALE(*(A + (i+3)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+1), B_scale_factor);
-          result[3][2] +=
-                GEMMINI_SCALE(*(A + (i+3)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+2), B_scale_factor);
-          result[3][3] +=
-                GEMMINI_SCALE(*(A + (i+3)*stride_A + k), A_scale_factor) *
-                GEMMINI_SCALE(*(B + k*stride_B + j+3), B_scale_factor);
-        }
-
-        *(C + i*stride_C + j) =
-             scale_and_sat(result[0][0], act, scale, bert_scale);
-        *(C + i*stride_C + j+1) =
-             scale_and_sat(result[0][1], act, scale, bert_scale);
-        *(C + i*stride_C + j+2) =
-             scale_and_sat(result[0][2], act, scale, bert_scale);
-        *(C + i*stride_C + j+3) =
-             scale_and_sat(result[0][3], act, scale, bert_scale);
-        *(C + (i+1)*stride_C + j) =
-             scale_and_sat(result[1][0], act, scale, bert_scale);
-        *(C + (i+1)*stride_C + j+1) =
-             scale_and_sat(result[1][1], act, scale, bert_scale);
-        *(C + (i+1)*stride_C + j+2) =
-             scale_and_sat(result[1][2], act, scale, bert_scale);
-        *(C + (i+1)*stride_C + j+3) =
-             scale_and_sat(result[1][3], act, scale, bert_scale);
-        *(C + (i+2)*stride_C + j) =
-             scale_and_sat(result[2][0], act, scale, bert_scale);
-        *(C + (i+2)*stride_C + j+1) =
-             scale_and_sat(result[2][1], act, scale, bert_scale);
-        *(C + (i+2)*stride_C + j+2) =
-             scale_and_sat(result[2][2], act, scale, bert_scale);
-        *(C + (i+2)*stride_C + j+3) =
-             scale_and_sat(result[2][3], act, scale, bert_scale);
-        *(C + (i+3)*stride_C + j) =
-             scale_and_sat(result[3][0], act, scale, bert_scale);
-        *(C + (i+3)*stride_C + j+1) =
-             scale_and_sat(result[3][1], act, scale, bert_scale);
-        *(C + (i+3)*stride_C + j+2) =
-             scale_and_sat(result[3][2], act, scale, bert_scale);
-        *(C + (i+3)*stride_C + j+3) =
-             scale_and_sat(result[3][3], act, scale, bert_scale);
-      }
-    }
-  } else {
-    size_t A_dim_strides[2] = {!transA ? stride_A : 1, !transA ? 1 : stride_A}; // i, j stride
-    size_t B_dim_strides[2] = {!transB ? 1 : stride_B, !transB ? stride_B : 1}; // j, k stride
-
-    // We also create a buffer that we can use for layernorms and softmaxes
-    static acc_t c_buffer[1024];
-    const size_t c_buffer_sz = sizeof(c_buffer)/sizeof(c_buffer[0]);
-    if ((act == LAYERNORM || act == SOFTMAX) && DIM_J > c_buffer_sz) {
-      printf("Matmul is too large to normalize\n");
-      exit(1);
-    }
-
-    for (size_t i = 0; i < DIM_I; i++) {
-      for (size_t j = 0; j < DIM_J; j++) {
-        elem_t* c = C + (i * stride_C) + j;
-
-        const size_t bias_row = repeating_bias ? 0 : i;
-        acc_t sum = no_bias ? 0 : GEMMINI_ACC_SCALE(*(D + bias_row * stride_D + j), D_scale_factor);
-
-        for (size_t k = 0; k < DIM_K; k++) {
-          const elem_t* a = A + i * A_dim_strides[0] + k * A_dim_strides[1];
-          const elem_t* b = B + j * B_dim_strides[0] + k * B_dim_strides[1];
-          sum += (GEMMINI_SCALE(*a, A_scale_factor) * GEMMINI_SCALE(*b, B_scale_factor));
-        }
-
-        if (act == LAYERNORM || act == SOFTMAX)
-          c_buffer[j] = sum;
-        else
-          *c = scale_and_sat(sum, act, scale, bert_scale);
-      }
-
-      if (act == LAYERNORM) {
-        acc_t sum = 0;
-        for (size_t j = 0; j < DIM_J; j++)
-          sum += c_buffer[j];
-        acc_t mean = sum / (acc_t)DIM_J;
-
-        acc_t total_err_sq = 0;
-        for (size_t j = 0; j < DIM_J; j++)
-          total_err_sq += (c_buffer[j] - mean)*(c_buffer[j] - mean);
-        acc_t variance = total_err_sq / (acc_t)DIM_J;
-
-        acc_t stddev = int_sqrt(variance);
-        if (variance == 0) stddev = 1;
-
-        for (size_t j = 0; j < DIM_J; j++) {
-          c_buffer[j] -= mean;
-          // c_buffer[j] /= stddev;
-          c_buffer[j] = ROUND_NEAR_EVEN((double)c_buffer[j] / stddev); // TODO I don't think I-BERT uses round-near-even, so we shouldn't either. We just use this rounding mode here in order to match the hardware.
-
-          elem_t* c = C + (i * stride_C) + j;
-          *c = scale_and_sat(c_buffer[j], act, scale, bert_scale);
-        }
-      } else if (act == SOFTMAX) {
-        const scale_t a = 0.3585;
-        const scale_t b = 1.353;
-        const scale_t c = 0.344;
-
-        // is SCALE supposed to be input scale?
-        const acc_t qln2 = (acc_t) (0.693147 / bert_scale);
-        const acc_t qln2_inv = 65536 / qln2;
-        const acc_t qb = b / bert_scale;
-        const acc_t qc = c / (a*bert_scale*bert_scale);
-
-        // pass 1: get max_q
-        acc_t max_q = -2147483648;
-        for (size_t j = 0; j < DIM_J; j++) {
-          if (c_buffer[j] > max_q) max_q = c_buffer[j];
-        }
-
-        // pass 2: calculate iexp(q_tilde) and sum(q_tilde)
-        acc_t sum_exp = 0;
-        for (size_t j = 0; j < DIM_J; j++) {
-          acc_t q = c_buffer[j] - max_q;
-          acc_t z = (acc_t) (-q * qln2_inv) >> 16;
-          acc_t qp = q + z * qln2;
-          acc_t q_exp = (qp + qb)*(qp + qb) + qc;
-          c_buffer[j] = q_exp >> z;
-          sum_exp += c_buffer[j];
-        }
-
-        // pass 3: divide by sum
-        scale_t factor = (127.f) / (float) sum_exp; // what corresponds to 1 in output?
-        for (size_t j = 0; j < DIM_J; j++) {
-          elem_t* c = C + (i * stride_C) + j;
-          *c = scale_and_sat(c_buffer[j], act, factor, bert_scale);
-        }
-      }
-    }
-  }
-}
 
 #undef GEMMINI_SCALE
 
@@ -1195,24 +998,16 @@ static void tiled_matmul(size_t dim_I, size_t dim_J, size_t dim_K,
 #endif
 
   // Run a tiled matrix multiplication on either Gemmini or the CPU
-  if (tiled_matmul_type == OS || tiled_matmul_type == WS) {
-    tiled_matmul_outer(dim_I, dim_J, dim_K,
-        A, B, D, C,
-        stride_A, stride_B, stride_D, stride_C,
-        A_scale_factor, B_scale_factor, D_scale_factor,
-        tile_I, tile_J, tile_K,
-        act, scale, bert_scale, repeating_bias,
-        transpose_A, transpose_B,
-        full_C, low_D,
-        weightA,
-        (int)tiled_matmul_type);
-  } else /*if (tiled_matmul_type == CPU)*/ {
-    matmul_cpu(transpose_A, transpose_B, dim_I, dim_J, dim_K,
-            A, B, (const acc_t*) D, (elem_t*)C,
-            stride_A, stride_B, stride_D, stride_C,
-            A_scale_factor, B_scale_factor, D_scale_factor,
-            act, scale, bert_scale, repeating_bias);
-  }
+  tiled_matmul_outer(dim_I, dim_J, dim_K,
+      A, B, D, C,
+      stride_A, stride_B, stride_D, stride_C,
+      A_scale_factor, B_scale_factor, D_scale_factor,
+      tile_I, tile_J, tile_K,
+      act, scale, bert_scale, repeating_bias,
+      transpose_A, transpose_B,
+      full_C, low_D,
+      weightA,
+      (int)tiled_matmul_type);
 }
 
 
