@@ -114,6 +114,13 @@ bool elem_t_isnan(elem_t x) {
     return is_nan_or_inf && is_not_inf;
 }
 
+bool elem_t_isinf(elem_t x) {
+    elem_t_bits bits = elem_t_to_elem_t_bits(x);
+    uint64_t exp = (bits >> (ELEM_T_SIG_BITS-1)) & (((uint64_t)1 << ELEM_T_EXP_BITS) - 1);
+    uint64_t sig = bits & (((uint64_t)1 << ELEM_T_SIG_BITS) - 1);
+    return exp == (((uint64_t)1 << ELEM_T_EXP_BITS) - 1) && sig == 0;
+}
+
 bool acc_t_isnan(acc_t x) {
     acc_t_bits bits = acc_t_to_acc_t_bits(x);
     uint64_t exp = (bits >> (ACC_T_SIG_BITS-1)) & (((uint64_t)1 << ACC_T_EXP_BITS) - 1);
