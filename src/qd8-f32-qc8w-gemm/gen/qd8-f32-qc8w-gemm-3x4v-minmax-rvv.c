@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/qs8-gemm/rvv.c.in
 //   Generator: tools/xngen
@@ -12,8 +13,8 @@
 
 #include <riscv_vector.h>
 
-#include "xnnpack/gemm.h"
-#include "xnnpack/math.h"
+#include "src/xnnpack/gemm.h"
+#include "src/xnnpack/math.h"
 
 void xnn_qd8_f32_qc8w_gemm_minmax_ukernel_3x4v__rvv(
     size_t mr,
@@ -64,7 +65,7 @@ void xnn_qd8_f32_qc8w_gemm_minmax_ukernel_3x4v__rvv(
     vint32m4_t vacc0 = __riscv_vmul_vx_i32m4(vksum, vinput_zero_point0, vl);
     vint32m4_t vacc1 = __riscv_vmul_vx_i32m4(vksum, vinput_zero_point1, vl);
     vint32m4_t vacc2 = __riscv_vmul_vx_i32m4(vksum, vinput_zero_point2, vl);
- 
+
     w = (const int32_t*) w + nr;
 
     size_t k = kc;
@@ -84,7 +85,7 @@ void xnn_qd8_f32_qc8w_gemm_minmax_ukernel_3x4v__rvv(
 
       k -= sizeof(int8_t);
     } while (k != 0);
- 
+
     // i32 -> f32
     vfloat32m4_t vout0 = __riscv_vfcvt_f_x_v_f32m4(vacc0, vl);
     vfloat32m4_t vout1 = __riscv_vfcvt_f_x_v_f32m4(vacc1, vl);

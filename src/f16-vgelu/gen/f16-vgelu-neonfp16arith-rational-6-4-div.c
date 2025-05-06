@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f16-vgelu/rational-6-4.c.in
 //   Generator: tools/xngen
@@ -10,12 +11,12 @@
 #include <assert.h>
 #include <stddef.h>
 
-#include "xnnpack/simd/f16-neonfp16arith.h"
+#include "src/xnnpack/simd/f16-neonfp16arith.h"
 
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/vunary.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/vunary.h"
 
 
 void xnn_f16_vgelu_ukernel__neonfp16arith_rational_6_4_div_u8(
@@ -138,7 +139,7 @@ void xnn_f16_vgelu_ukernel__neonfp16arith_rational_6_4_div_u16(
   XNN_SIMD_CONST_F16_FROM_FLOAT(vhalf, 0.5f);
 
   for (; batch >= 16 * sizeof(xnn_float16); batch -= 16 * sizeof(xnn_float16)) {
-    const xnn_simd_f16_t vx_orig_0 = xnn_loadu_f16(input);
+    const xnn_simd_f16_t vx_orig_0 = xnn_loadu_f16(input + 0 * xnn_simd_size_f16);
     const xnn_simd_f16_t vx_orig_1 = xnn_loadu_f16(input + 1 * xnn_simd_size_f16);
     input += 16;
 
@@ -177,7 +178,7 @@ void xnn_f16_vgelu_ukernel__neonfp16arith_rational_6_4_div_u16(
     const xnn_simd_f16_t vy_1 = xnn_mul_f16(xnn_mul_f16(vx_orig_1, vhalf),
                                         xnn_add_f16(verf_1, vone));
 
-    xnn_storeu_f16(output, vy_0);
+    xnn_storeu_f16(output + 0 * xnn_simd_size_f16, vy_0);
     xnn_storeu_f16(output + 1 * xnn_simd_size_f16, vy_1);
     output += 16;
   }
@@ -267,7 +268,7 @@ void xnn_f16_vgelu_ukernel__neonfp16arith_rational_6_4_div_u32(
   XNN_SIMD_CONST_F16_FROM_FLOAT(vhalf, 0.5f);
 
   for (; batch >= 32 * sizeof(xnn_float16); batch -= 32 * sizeof(xnn_float16)) {
-    const xnn_simd_f16_t vx_orig_0 = xnn_loadu_f16(input);
+    const xnn_simd_f16_t vx_orig_0 = xnn_loadu_f16(input + 0 * xnn_simd_size_f16);
     const xnn_simd_f16_t vx_orig_1 = xnn_loadu_f16(input + 1 * xnn_simd_size_f16);
     const xnn_simd_f16_t vx_orig_2 = xnn_loadu_f16(input + 2 * xnn_simd_size_f16);
     const xnn_simd_f16_t vx_orig_3 = xnn_loadu_f16(input + 3 * xnn_simd_size_f16);
@@ -330,7 +331,7 @@ void xnn_f16_vgelu_ukernel__neonfp16arith_rational_6_4_div_u32(
     const xnn_simd_f16_t vy_3 = xnn_mul_f16(xnn_mul_f16(vx_orig_3, vhalf),
                                         xnn_add_f16(verf_3, vone));
 
-    xnn_storeu_f16(output, vy_0);
+    xnn_storeu_f16(output + 0 * xnn_simd_size_f16, vy_0);
     xnn_storeu_f16(output + 1 * xnn_simd_size_f16, vy_1);
     xnn_storeu_f16(output + 2 * xnn_simd_size_f16, vy_2);
     xnn_storeu_f16(output + 3 * xnn_simd_size_f16, vy_3);

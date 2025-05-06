@@ -10,23 +10,23 @@
 #include <limits>
 #include <random>
 
-#include "dwconv.h"
-#include "utils.h"
-#include "xnnpack.h"
-#include "xnnpack/buffer.h"
-#include "xnnpack/common.h"
-#include "xnnpack/dwconv.h"
-#include "xnnpack/hardware-config.h"
-#include "xnnpack/indirection.h"
-#include "xnnpack/microfnptr.h"
-#include "xnnpack/microkernel-utils.h"
-#include "xnnpack/microparams-init.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/pack.h"
+#include "bench/dwconv.h"
+#include "bench/utils.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/buffer.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/dwconv.h"
+#include "src/xnnpack/hardware-config.h"
+#include "src/xnnpack/indirection.h"
+#include "src/xnnpack/microfnptr.h"
+#include "src/xnnpack/microkernel-utils.h"
+#include "src/xnnpack/microparams-init.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/pack.h"
 #include <benchmark/benchmark.h>
 
 static void bench_impl(uint64_t arch_flags, benchmark::State& state,
-                       xnn_qs8_dwconv_minmax_unipass_ukernel_fn dwconv,
+                       xnn_qs8_dwconv_minmax_ukernel_fn dwconv,
                        xnn_init_qs8_conv_minmax_params_fn init_params,
                        uint32_t channel_tile, uint32_t primary_tile) {
   if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
@@ -76,8 +76,8 @@ static void bench_impl(uint64_t arch_flags, benchmark::State& state,
   const size_t c_stride =
       benchmark::utils::RoundUp<size_t>(channels, channel_tile);
 
-  xnnpack::Buffer<int8_t> a(channels * input_height * input_width +
-                            XNN_EXTRA_BYTES / sizeof(int8_t));
+  xnnpack::Buffer<int8_t> a(channels * input_height * input_width,
+                            xnnpack::XnnExtraBytes);
   std::generate(a.begin(), a.end(), std::ref(i8rng));
   xnnpack::Buffer<int8_t> k(channels * kernel_height * kernel_width);
   std::generate(k.begin(), k.end(), std::ref(i8rng));
@@ -85,7 +85,7 @@ static void bench_impl(uint64_t arch_flags, benchmark::State& state,
   std::generate(b.begin(), b.end(), std::ref(i32rng));
 
   // Zero buffer needs to be initialized with zeros.
-  xnnpack::Buffer<int8_t> z(channels + XNN_EXTRA_BYTES / sizeof(int8_t));
+  xnnpack::Buffer<int8_t> z(channels, xnnpack::XnnExtraBytes);
   std::fill(z.begin(), z.end(), 0);
 
   const size_t k_elements = kernel_size * c_stride;
@@ -110,12 +110,10 @@ static void bench_impl(uint64_t arch_flags, benchmark::State& state,
   // Pack the weights buffer.
   struct xnn_qs8_packing_params packing_params;
   packing_params.input_zero_point = 0;
-  xnn_pack_qs8_dwconv_ghw_w(primary_tile, kernel_height, kernel_width,
-                            channels, channel_tile, channel_tile,
-                            /*channel_round=*/1, k.data(), b.data(),
+  xnn_pack_qs8_dwconv_ghw_w(primary_tile, kernel_height, kernel_width, channels,
+                            channel_tile, k.data(), b.data(),
                             /*scale=*/nullptr, w.data(),
-                            /*per_tile_extra_bytes=*/0,
-                            /*per_subtile_extra_bytes=*/0, &packing_params);
+                            /*per_tile_extra_bytes=*/0, &packing_params);
   for (size_t n = 1; n < num_buffers; n++) {
     std::copy(w.cbegin(), w.cbegin() + w_size, w.begin() + n * w_size);
   }
@@ -151,7 +149,7 @@ static void bench_impl(uint64_t arch_flags, benchmark::State& state,
              i.data() + buffer_index * i_elements + step_height * y,
              w.data() + buffer_index * w_size,
              c.data() + buffer_index * c_elements + y * output_width * channels,
-             kernel_height * step_width * sizeof(void*), 0, 0, z.data(),
+             kernel_height * step_width * sizeof(void*), 0, 0, 0, z.data(),
              &params);
     }
   }
@@ -174,15 +172,15 @@ static void bench_impl(uint64_t arch_flags, benchmark::State& state,
       benchmark::Counter::kIsRate);
 }
 
-#define XNN_DWCONV_UNIPASS(arch_flags, ukernel, c_block, is_pipelined, cr, kr, \
-                           datatype, weights_type, params_type, init_params)   \
-  static void BM_##ukernel(benchmark::State& state, const char* net) {         \
-    bench_impl(arch_flags, state, ukernel, init_params, cr, kr);               \
-  }                                                                            \
+#define XNN_UKERNEL(arch_flags, ukernel, c_block, is_pipelined, cr, kr, \
+                    datatype, weights_type, params_type, init_params)   \
+  static void BM_##ukernel(benchmark::State& state, const char* net) {  \
+    bench_impl(arch_flags, state, ukernel, init_params, cr, kr);        \
+  }                                                                     \
   BENCHMARK_DWCONV(BM_##ukernel);
 
-#include "qs8-dwconv/qs8-dwconv-minmax-unipass-fp32.h"
-#include "qs8-dwconv/qs8-dwconv-minmax-unipass-rndnu.h"
+#include "src/qs8-dwconv/qs8-dwconv-minmax-fp32.h"
+#include "src/qs8-dwconv/qs8-dwconv-minmax-rndnu.h"
 
 #ifndef XNNPACK_BENCHMARK_NO_MAIN
 XNN_BENCHMARK_MAIN();

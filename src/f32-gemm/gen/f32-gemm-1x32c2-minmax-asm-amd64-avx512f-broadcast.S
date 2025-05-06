@@ -3,7 +3,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "xnnpack/assembly.h"
+#include "src/xnnpack/assembly.h"
 .PERMUTATION:
       .long   0
       .long   2
@@ -118,6 +118,7 @@ BEGIN_FUNCTION xnn_f32_gemm_minmax_ukernel_1x32c2__asm_amd64_avx512f_broadcast
       vfmadd231ps  zmm12{k3}, zmm2, zmm8
       vfmadd231ps  zmm13{k3}, zmm2, zmm9
       vfmadd231ps  zmm14{k3}, zmm2, zmm10
+
 .Linner_loop_end:
       vpsrlq zmm7, zmm11, 32
       vaddps zmm11, zmm11, zmm7

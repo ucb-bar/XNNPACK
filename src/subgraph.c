@@ -3,7 +3,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "xnnpack/subgraph.h"
+#include "src/xnnpack/subgraph.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -13,19 +13,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/allocation-type.h"
-#include "xnnpack/allocator.h"
-#include "xnnpack/common.h"
-#include "xnnpack/config-types.h"
-#include "xnnpack/config.h"
-#include "xnnpack/fp16.h"
-#include "xnnpack/hardware-config.h"
-#include "xnnpack/internal.h"
-#include "xnnpack/log.h"
-#include "xnnpack/math.h"
-#include "xnnpack/node-type.h"
-#include "xnnpack/params.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/allocation-type.h"
+#include "src/xnnpack/allocator.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/config-types.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/fp16.h"
+#include "src/xnnpack/hardware-config.h"
+#include "src/xnnpack/internal.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/node-type.h"
+#include "src/xnnpack/params.h"
 
 #ifndef XNN_ENABLE_SPARSE
   #error "XNN_ENABLE_SPARSE not defined"
@@ -40,16 +40,6 @@ enum xnn_status xnn_insert_clamp_node(xnn_subgraph_t subgraph, float output_min,
   size_t dims[XNN_MAX_TENSOR_DIMS];
   memcpy(dims, output_value->shape.dim, num_dims * sizeof(size_t));
   switch (output_value->datatype) {
-    case xnn_datatype_fp16:
-      status = xnn_define_tensor_value(
-          subgraph, xnn_datatype_fp16, num_dims, dims, NULL,
-          /*external_id=*/XNN_INVALID_VALUE_ID, /*flags=*/0, &new_id);
-      break;
-    case xnn_datatype_fp32:
-      status = xnn_define_tensor_value(
-          subgraph, xnn_datatype_fp32, num_dims, dims, NULL,
-          /*external_id=*/XNN_INVALID_VALUE_ID, /*flags=*/0, &new_id);
-      break;
     case xnn_datatype_quint8:
       status = xnn_define_quantized_tensor_value(
           subgraph, xnn_datatype_quint8, output_value->quantization.zero_point,
@@ -63,7 +53,10 @@ enum xnn_status xnn_insert_clamp_node(xnn_subgraph_t subgraph, float output_min,
           /*external_id=*/XNN_INVALID_VALUE_ID, /*flags=*/0, &new_id);
       break;
     default:
-      XNN_UNREACHABLE;
+      status = xnn_define_tensor_value(
+          subgraph, output_value->datatype, num_dims, dims, NULL,
+          /*external_id=*/XNN_INVALID_VALUE_ID, /*flags=*/0, &new_id);
+      break;
   }
   if (status != xnn_status_success) {
     return status;
@@ -892,10 +885,7 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
       case xnn_node_type_binary_elementwise:
       case xnn_node_type_unary_elementwise:
       case xnn_node_type_batch_matrix_multiply:
-      case xnn_node_type_concatenate2:
-      case xnn_node_type_concatenate3:
-      case xnn_node_type_concatenate4:
-      case xnn_node_type_concatenate5:
+      case xnn_node_type_concatenate:
       case xnn_node_type_convert:
       case xnn_node_type_average_pooling_2d:
       case xnn_node_type_copy:
@@ -903,9 +893,7 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
       case xnn_node_type_deconvolution_2d:
       case xnn_node_type_depthwise_convolution_2d:
       case xnn_node_type_depth_to_space_2d:
-      case xnn_node_type_even_split2:
-      case xnn_node_type_even_split3:
-      case xnn_node_type_even_split4:
+      case xnn_node_type_even_split:
       case xnn_node_type_fully_connected:
       case xnn_node_type_global_average_pooling_2d:
       case xnn_node_type_global_sum_pooling_2d:
@@ -1156,11 +1144,12 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
       } else if (xnn_value_is_external(value)) {
         assert(value->datatype == xnn_datatype_fp32);
         assert(value->fp16_id != XNN_INVALID_VALUE_ID);
-        struct xnn_value* fp16_value = &subgraph->values[value->fp16_id];
         value->producer = XNN_INVALID_NODE_ID;
         value->num_consumers = 0;
         value->first_consumer = XNN_INVALID_NODE_ID;
-        xnn_log_debug("FP16 rewrite: created FP16 tensor #%" PRIu32 " for FP32 tensor #%" PRIu32, fp16_value->id, n);
+        xnn_log_debug("FP16 rewrite: created FP16 tensor #%" PRIu32
+                      " for FP32 tensor #%" PRIu32,
+                      subgraph->values[value->fp16_id].id, n);
       } else {
         switch (value->datatype) {
           case xnn_datatype_fp32:
@@ -1563,7 +1552,10 @@ void xnn_subgraph_optimize_dynamic_quantization_ops(xnn_subgraph_t subgraph) {
                      xnn_init_qp8_f32_qc8w_gemm_config() != NULL) {
             pack_activations = true;
           } else if ((weights_type == xnn_weights_type_qb4w) &&
-                     xnn_init_qp8_f32_qb4w_gemm_config() != NULL) {
+                     xnn_init_qp8_f32_qb4w_gemm_config() != NULL &&
+                     // The `qp8_f32_qb4w` GEMMs currently only accept unsigned
+                     // weights.
+                     filter->quantization.zero_point == 8) {
             pack_activations = true;
           }
         }
@@ -1710,6 +1702,11 @@ enum xnn_status xnn_subgraph_optimize(
       xnn_log_error("failed to force FP16 inference: subgraph is incompatible with FP16 operators");
       return xnn_status_unsupported_parameter;
     }
+    if (fp16_rewrite_succeeded) {
+      // Re-run xnn_subgraph_analyze_consumers_and_producers since fp16 re-write
+      // inserts nodes and changes producers/consumers.
+      xnn_subgraph_analyze_consumers_and_producers(subgraph);
+    }
   }
 
   #if XNN_ENABLE_SPARSE
@@ -1757,8 +1754,12 @@ enum xnn_status xnn_delete_subgraph(
 enum xnn_node_type xnn_reduce_operator_to_node_type(enum xnn_reduce_operator type)
 {
   switch (type) {
+    case xnn_reduce_max:
+      return xnn_node_type_static_reduce_max;
     case xnn_reduce_mean:
       return xnn_node_type_static_mean;
+    case xnn_reduce_min:
+      return xnn_node_type_static_reduce_min;
     case xnn_reduce_sum:
       return xnn_node_type_static_sum;
     default:
@@ -1771,6 +1772,10 @@ enum xnn_reduce_operator xnn_node_type_to_reduce_operator(enum xnn_node_type typ
   switch (type) {
     case xnn_node_type_static_mean:
       return xnn_reduce_mean;
+    case xnn_node_type_static_reduce_max:
+      return xnn_reduce_max;
+    case xnn_node_type_static_reduce_min:
+      return xnn_reduce_min;
     case xnn_node_type_static_sum:
       return xnn_reduce_sum;
     default:

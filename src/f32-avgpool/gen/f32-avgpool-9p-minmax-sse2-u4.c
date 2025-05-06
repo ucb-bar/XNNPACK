@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-avgpool/avgpool.c.in
 //   Generator: tools/xngen
@@ -11,10 +12,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/simd/f32-sse2.h"
+#include "src/xnnpack/simd/f32-sse2.h"
 
-#include "xnnpack/common.h"
-#include "xnnpack/microparams.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
 
 void xnn_f32_avgpool_minmax_ukernel_9p__sse2_u4(
     size_t output_pixels,
@@ -22,6 +23,7 @@ void xnn_f32_avgpool_minmax_ukernel_9p__sse2_u4(
     size_t channels,
     const float** input,
     size_t input_offset,
+    size_t input_pixel_stride,
     const float* zero,
     const float* multiplier,
     float* output,
@@ -259,6 +261,7 @@ void xnn_f32_avgpool_minmax_ukernel_9p__sse2_u4(
     }
 
     input = (const float**) ((uintptr_t) input + input_increment);
+    input_offset += input_pixel_stride;
     output = (float*) ((uintptr_t) output + output_increment);
   } while (--output_pixels != 0);
 }

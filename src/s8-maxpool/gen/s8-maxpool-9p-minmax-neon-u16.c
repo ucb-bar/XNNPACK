@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-maxpool/maxpool.c.in
 //   Generator: tools/xngen
@@ -19,10 +20,10 @@
 #define xnn_load_tail_safe_impl(x, c) xnn_load_tail_safe_s8(x, c)
 #define xnn_pre_store_impl(x) x
 
-#include "xnnpack/simd/s8-neon.h"
+#include "src/xnnpack/simd/s8-neon.h"
 
-#include "xnnpack/common.h"
-#include "xnnpack/microparams.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
 
 void xnn_s8_maxpool_minmax_ukernel_9p__neon_u16(
     size_t output_pixels,
@@ -30,6 +31,7 @@ void xnn_s8_maxpool_minmax_ukernel_9p__neon_u16(
     size_t channels,
     const int8_t** input,
     size_t input_offset,
+    size_t input_pixel_stride,
     int8_t* output,
     size_t input_increment,
     size_t output_increment,
@@ -208,6 +210,7 @@ void xnn_s8_maxpool_minmax_ukernel_9p__neon_u16(
     }
 
     input = (const int8_t**) ((uintptr_t) input + input_increment);
+    input_offset += input_pixel_stride;
     output = (int8_t*) ((uintptr_t) output + output_increment);
   } while (--output_pixels != 0);
 }

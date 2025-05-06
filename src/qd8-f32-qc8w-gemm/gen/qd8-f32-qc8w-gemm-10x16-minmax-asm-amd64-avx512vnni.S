@@ -3,7 +3,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "xnnpack/assembly.h"
+#include "src/xnnpack/assembly.h"
 
 BEGIN_FUNCTION xnn_qd8_f32_qc8w_gemm_minmax_ukernel_10x16c4__asm_amd64_avx512vnni
 
@@ -158,7 +158,6 @@ BEGIN_FUNCTION xnn_qd8_f32_qc8w_gemm_minmax_ukernel_10x16c4__asm_amd64_avx512vnn
 
       mov [rsp + 160], rax
       mov [rsp + 168], r13
-
       # Load quantization_params pointer from stack
       mov r11, [rsp + 840]
       mov edi, [r11 + 0]
@@ -248,6 +247,7 @@ BEGIN_FUNCTION xnn_qd8_f32_qc8w_gemm_minmax_ukernel_10x16c4__asm_amd64_avx512vnn
       add r11, 4
       cmp rdx, r11
       jne .Linner_loop
+
 .Linner_loop_end:
 
       # Convert from int32 to float.

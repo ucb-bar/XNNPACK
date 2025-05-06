@@ -3,7 +3,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "xnnpack/assembly.h"
+#include "src/xnnpack/assembly.h"
 
 BEGIN_FUNCTION xnn_bf16_f32_gemm_minmax_ukernel_2x16c2__asm_amd64_avx512bf16_broadcast
 
@@ -92,13 +92,14 @@ BEGIN_FUNCTION xnn_bf16_f32_gemm_minmax_ukernel_2x16c2__asm_amd64_avx512bf16_bro
       add r9, 64
       vbroadcastss zmm2, DWORD PTR [rcx + r11]
       vpslld zmm2, zmm2, 16
-      vpsrad zmm2, zmm2, 16
+      vpsrld zmm2, zmm2, 16
       vdpbf16ps  zmm11, zmm2, zmm7
 
       vbroadcastss zmm3, DWORD PTR [rax + r11]
       vpslld zmm3, zmm3, 16
-      vpsrad zmm3, zmm3, 16
+      vpsrld zmm3, zmm3, 16
       vdpbf16ps  zmm12, zmm3, zmm7
+
 
 .Linner_loop_end:
       # Min/max clamping.

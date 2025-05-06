@@ -1,3 +1,4 @@
+// clang-format off
 // Copyright 2024 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
@@ -29,10 +30,10 @@ XNN_UKERNEL_WITH_PARAMS(xnn_arch_arm_neon, xnn_f32_maxpool_minmax_ukernel_9p__ne
 XNN_UKERNEL_WITH_PARAMS(0, xnn_f32_maxpool_minmax_ukernel_9p__wasmsimd_u4, 4, 9, float, struct xnn_f32_minmax_params, xnn_init_f32_minmax_scalar_params)
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 
-#if XNN_ENABLE_RISCV_VECTOR && XNN_ARCH_RISCV
+#if XNN_ARCH_RISCV && XNN_ENABLE_RISCV_VECTOR
 XNN_UKERNEL_WITH_PARAMS(xnn_arch_riscv_vector, xnn_f32_maxpool_minmax_ukernel_9p__rvv_u1v, (1*xnn_init_hardware_config()->vlenb/sizeof(float)), 9, float, struct xnn_f32_minmax_params, xnn_init_f32_minmax_scalar_params)
 XNN_UKERNEL_WITH_PARAMS(xnn_arch_riscv_vector, xnn_f32_maxpool_minmax_ukernel_9p__rvv_u2v, (2*xnn_init_hardware_config()->vlenb/sizeof(float)), 9, float, struct xnn_f32_minmax_params, xnn_init_f32_minmax_scalar_params)
-#endif  // XNN_ENABLE_RISCV_VECTOR && XNN_ARCH_RISCV
+#endif  // XNN_ARCH_RISCV && XNN_ENABLE_RISCV_VECTOR
 
 XNN_UKERNEL_WITH_PARAMS(0, xnn_f32_maxpool_minmax_ukernel_9p__scalar_u1, 1, 9, float, struct xnn_f32_minmax_params, xnn_init_f32_minmax_scalar_params)
 

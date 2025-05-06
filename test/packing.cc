@@ -3,6 +3,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+// clang-format off
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -11,12 +13,19 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "xnnpack/math.h"
-#include "xnnpack/microkernel-utils.h"
-#include "xnnpack/microparams-init.h"
-#include "xnnpack/pack.h"
+#include "src/xnnpack/buffer.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microkernel-utils.h"
+#include "src/xnnpack/microparams-init.h"
+#include "src/xnnpack/pack.h"
 
 // QD8-F32-QC4W GEMM packing tests.
+
+namespace {
+
+using testing::ElementsAreArray;
+using testing::Matcher;
+using testing::_;
 
 TEST(PACK_QD8_F32_QC4W_GEMM_GOI_W, kr_eq_4) {
   size_t g = 1;
@@ -30,17 +39,17 @@ TEST(PACK_QD8_F32_QC4W_GEMM_GOI_W, kr_eq_4) {
   std::iota(b.begin(), b.end(), 0);
   std::vector<uint8_t> k(g * nc * kc / 2);
   k[0] = 0x98; k[1] = 0xBA; k[2] = 0xDC; k[3] = 0xFE; k[4] = 0x10; k[5] = 0x32; k[6] = 0x54; k[7] = 0x76;
-  std::vector<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
+  xnnpack::Buffer<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
   auto a = xnn_qs8_qc4w_packing_params{ 0, 0x8 };
   xnn_pack_qs8_qc4w_gemm_goi_w(g, nc, kc, nr, kr, sr,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/&a);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // 1 bias.
     0x00, 0x00, 0x00, 0x00,
     0x40, 0x51, 0x62, 0x73, 0xC8, 0xD9, 0xEA, 0xFB,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QC4W_GEMM_GIO_W, kr_eq_4) {
@@ -71,17 +80,17 @@ TEST(PACK_QD8_F32_QC4W_GEMM_GIO_W, kr_eq_4) {
   k[13] = 0x85;
   k[14] = 0x86;
   k[15] = 0x87;
-  std::vector<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
+  xnnpack::Buffer<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
   auto a = xnn_qs8_qc4w_packing_params{ 0, 0x8 };
   xnn_pack_qs8_qc4w_gemm_gio_w(g, nc, kc, nr, kr, sr,/*k_stride=*/round_up_po2(nc, 2),
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/&a);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // 1 bias.
     0x00, 0x00, 0x00, 0x00,
     0x40, 0x51, 0x62, 0x73, 0xC8, 0xD9, 0xEA, 0xFB,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QC4W_GEMM_GOI_W, kr_eq_4_nr_eq_2) {
@@ -97,19 +106,19 @@ TEST(PACK_QD8_F32_QC4W_GEMM_GOI_W, kr_eq_4_nr_eq_2) {
   std::vector<uint8_t> k(g * nc * kc / 2);
   k[0] = 0x98; k[1] = 0xBA; k[2] = 0xDC; k[3] = 0xFE;
   k[4] = 0x10; k[5] = 0x32; k[6] = 0x54; k[7] = 0x76;
-  std::vector<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
+  xnnpack::Buffer<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
   auto a = xnn_qs8_qc4w_packing_params{ 0, 0x8 };
   xnn_pack_qs8_qc4w_gemm_goi_w(g, nc, kc, nr, kr, sr,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/&a);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // 2 bias.
     0x00, 0x00, 0x00, 0x00,
     0x01, 0x00, 0x00, 0x00,
     0x40, 0x51, 0x62, 0x73,
     0xC8, 0xD9, 0xEA, 0xFB,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QC4UW_GEMM_GOI_W, kr_eq_4_nr_eq_2) {
@@ -125,19 +134,19 @@ TEST(PACK_QD8_F32_QC4UW_GEMM_GOI_W, kr_eq_4_nr_eq_2) {
   std::vector<uint8_t> k(g * nc * kc / 2);
   k[0] = 0x98; k[1] = 0xBA; k[2] = 0xDC; k[3] = 0xFE;
   k[4] = 0x10; k[5] = 0x32; k[6] = 0x54; k[7] = 0x76;
-  std::vector<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
+  xnnpack::Buffer<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
   auto a = xnn_qs8_qc4w_packing_params{ 0, 0x8 };
   xnn_pack_qs8_qc4uw_gemm_goi_w(g, nc, kc, nr, kr, sr,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/&a);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // 2 bias.
     0x00, 0x00, 0x00, 0x00,
     0x01, 0x00, 0x00, 0x00,
     0xC8, 0xD9, 0xEA, 0xFB,
     0x40, 0x51, 0x62, 0x73,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QC4W_GEMM_GIO_W, kr_eq_4_nr_eq_2) {
@@ -159,19 +168,19 @@ TEST(PACK_QD8_F32_QC4W_GEMM_GIO_W, kr_eq_4_nr_eq_2) {
   k[5] = 0x5D;
   k[6] = 0x6E;
   k[7] = 0x7F;
-  std::vector<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
+  xnnpack::Buffer<uint8_t> packed_weights(g * round_up(nc, nr) * (sizeof(float) + round_up_po2(kc, kr * sr) / 2));
   auto a = xnn_qs8_qc4w_packing_params{ 0, 0x8 };
   xnn_pack_qs8_qc4w_gemm_gio_w(g, nc, kc, nr, kr, sr, /*k_stride=*/nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/&a);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // 2 bias.
     0x00, 0x00, 0x00, 0x00,
     0x01, 0x00, 0x00, 0x00,
     0x40, 0x51, 0x62, 0x73,
     0xC8, 0xD9, 0xEA, 0xFB,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, bl_eq_kc) {
@@ -214,16 +223,13 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, bl_eq_kc) {
   xnn_init_blockwise_scale_bf16_params(
     /*channels=*/ nc,
     /*channels_tile=*/ nr,
-    /*channel_stride=*/ nr,
     /*stride=*/ stride,
-    /*substride=*/ stride,
     /*num_blocks=*/k_num_blocks,
     /*block_stride=*/block_stride,
-    /*stride_offset=*/ 0,
     /*scale=*/ scale.data(),
     /*packed_weight=*/ packed_weights.data() + start_offset);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // kscaledsum
     // scaled row sum converted to bf16.
     0x00, 0x00, 0xd5, 0xc5, // -1 * 853.6010 (bf16) * sum(-8..+7) = 0xc5d50000
@@ -237,7 +243,7 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, bl_eq_kc) {
     // extra bytes n - no bias for this test
     0, 0, 0, 0
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, nc_gt_1) {
@@ -287,16 +293,13 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, nc_gt_1) {
   xnn_init_blockwise_scale_bf16_params(
     /*channels=*/nc,
     /*channels_tile=*/nr,
-    /*channels_subtile=*/nr,
     /*stride=*/stride,
-    /*substride=*/stride,
     /*num_blocks=*/k_num_blocks,
     /*block_stride=*/block_stride,
-    /*stride_offset=*/0,
     /*scale=*/scale.data(),
     /*packed_w=*/packed_weights.data() + start_offset);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // kscaledsum
     // scaled row sum converted to bf16.
     0x00, 0x00, 0xd5, 0xc5, // -1 * 853.6010 (bf16) * (sum(-8..+7) = 0xc5d50000
@@ -321,7 +324,7 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, nc_gt_1) {
     0, 0, 0, 0
   };
 
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, bl_lt_kc) {
@@ -364,17 +367,14 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, bl_lt_kc) {
   xnn_init_blockwise_scale_bf16_params(
     /*channels=*/ nc,
     /*channels_tile=*/ nr,
-    /*channel_stride=*/ nr,
     /*stride=*/ stride,
-    /*substride=*/ stride,
     /*num_blocks=*/k_num_blocks,
     /*block_stride=*/block_stride,
-    /*stride_offset=*/ 0,
     /*scale=*/ scale.data(),
     /*packed_weight=*/ packed_weights.data() + start_offset);
 
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // kscaledsum
     // scaled row sum converted to bf16.
     0x00, 0x00, 0xd5, 0xc5, // -1 * 853.6010 (bf16) * (sum(-8..+7) = 0xc5d50000
@@ -392,7 +392,7 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GOI_W, bl_lt_kc) {
     // extra bytes n - no bias for this test
     0, 0, 0, 0
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QD8_F32_QB4W_GEMM_GIO_W, bl_eq_kc) {
@@ -450,16 +450,13 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GIO_W, bl_eq_kc) {
   xnn_init_blockwise_scale_bf16_params(
     /*channels=*/nc,
     /*channels_tile=*/nr,
-    /*channel_subtile=*/nr,
     /*stride=*/stride,
-    /*substride=*/stride,
     /*num_blocks=*/k_num_blocks,
     /*block_stride=*/block_stride,
-    /*stride_offset=*/0,
     /*scale=*/scale.data(),
     /*packed_w=*/packed_weights.data() + start_offset);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // kscaledsum
     0x00, 0x00, 0xd5, 0xc5, // -1 * 853.6010 (bf16) * (sum(-8..+7) = 0xc5d50000
 
@@ -483,7 +480,7 @@ TEST(PACK_QD8_F32_QB4W_GEMM_GIO_W, bl_eq_kc) {
     // extra bytes n
     0, 0, 0, 0
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_GEMM_GIO_W, g_eq_1) {
@@ -498,17 +495,17 @@ TEST(PACK_F32_GEMM_GIO_W, g_eq_1) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1]
   std::vector<float> k(g * nc * kc);
   std::iota(k.begin(), k.end(), static_cast<float>(b.size())); // k = [2, 3, 4, 5]
-  std::vector<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
   xnn_pack_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     0.0f,
     2.0f, 4.f,
     1.0f,
     3.0f, 5.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_GEMM_GIO_W, g_eq_1_nr_gt_1_kr_gt_1) {
@@ -523,19 +520,20 @@ TEST(PACK_F32_GEMM_GIO_W, g_eq_1_nr_gt_1_kr_gt_1) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1, 2]
   std::vector<float> k(g * nc * kc);
   std::iota(k.begin(), k.end(), static_cast<float>(b.size())); // k = [3, 4, 5, 6, 7, 8, 9, 10, 11]
-  std::vector<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
   xnn_pack_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     0.0f, 1.0f,
     3.0f, 6.0f, 4.0f, 7.0f,
     9.0f, 0.0f, 10.0f, 0.0f,
-    2.0f, 0.0f,
-    5.0f, 8.0f, 0.0f, 0.0f,
-    11.0f, 0.0f, 0.0f, 0.0f,
+
+    2.0f, _,
+    5.0f, 8.0f, _, _,
+    11.0f, 0.0f, _, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, testing::ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_GEMM_GIO_W, g_gt_1) {
@@ -550,11 +548,11 @@ TEST(PACK_F32_GEMM_GIO_W, g_gt_1) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1, 2, 3, 4, 5]
   std::vector<float> k(g * nc * kc);
   std::iota(k.begin(), k.end(), static_cast<float>(b.size())); // k = [6,7,8,9,10,11,12,13,14,15,16,17]
-  std::vector<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
   xnn_pack_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     0.0f,
     6.0f, 8.f,
     1.0f,
@@ -568,7 +566,7 @@ TEST(PACK_F32_GEMM_GIO_W, g_gt_1) {
     5.0f,
     15.0f, 17.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_GEMM_GIO_W, g_gt_1_nr_gt_1_kr_gt_1) {
@@ -587,34 +585,34 @@ TEST(PACK_F32_GEMM_GIO_W, g_gt_1_nr_gt_1_kr_gt_1) {
                                                                //   18,19,20,21,22,23,24,25,26,
                                                                //   27,28,29,30,31,32,33,34,35
                                                                // ]
-  std::vector<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) * (1 + round_up_po2(kc, kr * sr)));
   xnn_pack_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // Group 1.
     0.0f, 1.0f,
     9.0f, 12.0f, 10.0f, 13.0f,
     15.0f, 0.0f, 16.0f, 0.0f,
-    2.0f, 0.0f,
-    11.0f, 14.0f, 0.0f, 0.0f,
-    17.0f, 0.0f, 0.0f, 0.0f,
+    2.0f, _,
+    11.0f, 14.0f, _, _,
+    17.0f, 0.0f, _, _,
     // Group 2.
     3.0f, 4.0f,
     18.0f, 21.0f, 19.0f, 22.0f,
     24.0f, 0.0f, 25.0f, 0.0f,
-    5.0f, 0.0f,
-    20.0f, 23.0f, 0.0f, 0.0f,
-    26.0f, 0.0f, 0.0f, 0.0f,
+    5.0f, _,
+    20.0f, 23.0f, _, _,
+    26.0f, 0.0f, _, _,
     // Group 3.
     6.0f, 7.0f,
     27.0f, 30.0f, 28.0f, 31.0f,
     33.0f, 0.0f, 34.0f, 0.0f,
-    8.0f, 0.0f,
-    29.0f, 32.0f, 0.0f, 0.0f,
-    35.0f, 0.0f, 0.0f, 0.0f,
+    8.0f, _,
+    29.0f, 32.0f, _, _,
+    35.0f, 0.0f, _, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, testing::ElementsAreArray(expected));
 }
 
 float packed_bf16(xnn_bfloat16 a, xnn_bfloat16 b) {
@@ -639,17 +637,17 @@ TEST(PACK_BF16_F32_GEMM_GIO_W, g_eq_1) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1]
   std::vector<xnn_bfloat16> k(g * nc * kc);
   std::iota(k.begin(), k.end(), static_cast<float>(b.size())); // k = [2, 3, 4, 5]
-  std::vector<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
   xnn_pack_bf16_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     0.0f,
     packed_bf16(2.0f, 4.f),
     1.0f,
     packed_bf16(3.0f, 5.0f),
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_BF16_F32_GEMM_GIO_W, g_eq_1_nr_gt_1_kr_gt_1) {
@@ -664,19 +662,19 @@ TEST(PACK_BF16_F32_GEMM_GIO_W, g_eq_1_nr_gt_1_kr_gt_1) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1, 2]
   std::vector<xnn_bfloat16> k(g * nc * kc);
   std::iota(k.begin(), k.end(), static_cast<float>(b.size())); // k = [3, 4, 5, 6, 7, 8, 9, 10, 11]
-  std::vector<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
   xnn_pack_bf16_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     0.0f, 1.0f,
     packed_bf16(3.0f, 6.0f), packed_bf16(4.0f, 7.0f),
     packed_bf16(9.0f, 0.0f), packed_bf16(10.0f, 0.0f),
-    2.0f, 0.0f,
-    packed_bf16(5.0f, 8.0f), packed_bf16(0.0f, 0.0f),
-    packed_bf16(11.0f, 0.0f), packed_bf16(0.0f, 0.0f),
+    2.0f, _,
+    packed_bf16(5.0f, 8.0f), _,
+    packed_bf16(11.0f, 0.0f), _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, testing::ElementsAreArray(expected));
 }
 
 TEST(PACK_BF16_F32_GEMM_GIO_W, g_gt_1) {
@@ -691,11 +689,11 @@ TEST(PACK_BF16_F32_GEMM_GIO_W, g_gt_1) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1, 2, 3, 4, 5]
   std::vector<xnn_bfloat16> k(g * nc * kc);
   std::iota(k.begin(), k.end(), static_cast<float>(b.size())); // k = [6,7,8,9,10,11,12,13,14,15,16,17]
-  std::vector<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
   xnn_pack_bf16_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     0.0f,
     packed_bf16(6.0f, 8.f),
     1.0f,
@@ -709,7 +707,7 @@ TEST(PACK_BF16_F32_GEMM_GIO_W, g_gt_1) {
     5.0f,
     packed_bf16(15.0f, 17.0f),
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_BF16_F32_GEMM_GIO_W, g_gt_1_nr_gt_1_kr_gt_1) {
@@ -728,34 +726,34 @@ TEST(PACK_BF16_F32_GEMM_GIO_W, g_gt_1_nr_gt_1_kr_gt_1) {
                                                                //   18,19,20,21,22,23,24,25,26,
                                                                //   27,28,29,30,31,32,33,34,35
                                                                // ]
-  std::vector<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
+  xnnpack::Buffer<float> packed_weights(g * round_up(nc, nr) + g * round_up(nc, nr) * round_up_po2(kc, kr * sr) / 2);
   xnn_pack_bf16_f32_gemm_gio_w(g, nc, kc, nr, kr, sr, nc,
     k.data(), b.data(), /*scale=*/nullptr, packed_weights.data(), /*extra_bytes=*/0, /*params=*/nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // Group 1.
     0.0f, 1.0f,
     packed_bf16(9.0f, 12.0f), packed_bf16(10.0f, 13.0f),
     packed_bf16(15.0f, 0.0f), packed_bf16(16.0f, 0.0f),
-    2.0f, 0.0f,
-    packed_bf16(11.0f, 14.0f), packed_bf16(0.0f, 0.0f),
-    packed_bf16(17.0f, 0.0f), packed_bf16(0.0f, 0.0f),
+    2.0f, _,
+    packed_bf16(11.0f, 14.0f), _,
+    packed_bf16(17.0f, 0.0f), _,
     // Group 2.
     3.0f, 4.0f,
     packed_bf16(18.0f, 21.0f), packed_bf16(19.0f, 22.0f),
     packed_bf16(24.0f, 0.0f), packed_bf16(25.0f, 0.0f),
-    5.0f, 0.0f,
-    packed_bf16(20.0f, 23.0f), packed_bf16(0.0f, 0.0f),
-    packed_bf16(26.0f, 0.0f), packed_bf16(0.0f, 0.0f),
+    5.0f, _,
+    packed_bf16(20.0f, 23.0f), _,
+    packed_bf16(26.0f, 0.0f), _,
     // Group 3.
     6.0f, 7.0f,
     packed_bf16(27.0f, 30.0f), packed_bf16(28.0f, 31.0f),
     packed_bf16(33.0f, 0.0f), packed_bf16(34.0f, 0.0f),
-    8.0f, 0.0f,
-    packed_bf16(29.0f, 32.0f), packed_bf16(0.0f, 0.0f),
-    packed_bf16(35.0f, 0.0f), packed_bf16(0.0f, 0.0f),
+    8.0f, _,
+    packed_bf16(29.0f, 32.0f), _,
+    packed_bf16(35.0f, 0.0f), _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, testing::ElementsAreArray(expected));
 }
 
 // DWCONV packing tests.
@@ -772,7 +770,7 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
   std::vector<uint8_t> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
 
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -783,19 +781,16 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 48387);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first
     // 48387 + 0 - (2 + 3 + 4) * 127 = 47,244 = 0xB88C
     0x8C, 0xB8, 0, 0,
@@ -806,7 +801,7 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
     3, 6,
     4, 7,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -825,7 +820,7 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   14, 15, 16,
                                       //   17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -836,19 +831,16 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 48387);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     // 48387 + 0 - (5 + 6 + 7) * 127 = 46,101 = 0xB415
@@ -867,11 +859,11 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // bias again
     // 48387 + 4 - (17 + 18 + 19) * 127 = 41,533 = 0xA23D
     0x3D, 0xA2, 0, 0,
-    0, 0, 0, 0,
+    _, _, _, _,
     // then weights, channels first
-    17, 0, 18, 0, 19, 0,
+    17, _, 18, _, 19, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
@@ -889,7 +881,7 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -900,19 +892,16 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 64516);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 64516 + 0 - (2 + 3 + 4 + 5) * 127 = 62,738 = 0xF512
     0x12, 0xF5, 0, 0,
@@ -922,10 +911,11 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
     2, 6,
     // go down the columns first
     4, 8, 3, 7, 5, 9,
-    // followed by 10 zeros to make up the difference with primary_tile
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    // followed by 10 kernel zero values to make up the difference with
+    // primary_tile
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -949,7 +939,7 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   21, 22,
                                       //   23, 24]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -960,19 +950,16 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 64516);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 64516 + 0 - (5 + 6 + 7 + 8) * 127 = 61,214 = 0xEF1E
     0x1E, 0xEF, 0, 0,
@@ -984,8 +971,9 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7, 11,
     6, 10,
     8, 12,
-    // followed by 10 zeros to make up the difference with primary_tile
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    // followed by 10 kernel zero values to make up the difference with
+    // primary_tile
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
     // bias first (cr == 2 of them)
     // 64516 + 2 - (13 + 14 + 15 + 16) * 127 = 57,152 = 0xDF40
     0x40, 0xDF, 0, 0,
@@ -993,16 +981,16 @@ TEST(PACK_QU8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     0x51, 0xD7, 0, 0,
     // then weights, channels first
     13, 17, 15, 19, 14, 18, 16, 20,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
     // bias
     // 64516 + 4 - (21 + 22 + 23 + 24) * 127 = 53,090 = 0xCF62
     0x62, 0xCF, 0, 0,
-    0, 0, 0, 0,
+    _, _, _, _,
     // weights
-    21, 0, 23, 0, 22, 0, 24, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    21, _, 23, _, 22, _, 24, _,
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
@@ -1017,7 +1005,7 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
   std::vector<uint8_t> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
 
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1028,19 +1016,16 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 48387);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first
     // 48387 + 0 - (2 + 4 + 6) * 127 = 46,863 = 0xB70F
     0x0F, 0xB7, 0, 0,
@@ -1051,7 +1036,7 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
     4, 5,
     6, 7,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -1068,7 +1053,7 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   10, 11, 12, 13, 14,
                                       //   15, 16, 17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1079,19 +1064,16 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 48387);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     // 48387 + 0 - (5 + 10 + 15) * 127 = 44577 = 0xAE21
@@ -1110,11 +1092,11 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // bias again
     // 48387 + 4 - (9, 14, 19) * 127 = 43053 = 0xA831
     0x31, 0xA8, 0, 0,
-    0, 0, 0, 0,
+    _, _, _, _,
     // then weights, channels first
-    9, 0, 14, 0, 19, 0,
+    9, _, 14, _, 19, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
@@ -1132,7 +1114,7 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1143,19 +1125,16 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 64516);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 64516 + 0 - (2 + 4 + 6 + 8) * 127 = 61976 = 0xF218
     0x18, 0xF2, 0, 0,
@@ -1165,10 +1144,11 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
     2, 3,
     // go down the columns first
     6, 7, 4, 5, 8, 9,
-    // followed by 10 zeros to make up the difference with primary_tile
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    // followed by 10 kernel zero values to make up the difference with
+    // primary_tile
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -1186,7 +1166,7 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   15, 16, 17, 18, 19,
                                       //   20, 21, 22, 23, 24]
   std::iota(k.begin(), k.end(), static_cast<uint8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qu8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1197,19 +1177,16 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
   const int32_t bias_offset = h * w * params.input_zero_point * params.kernel_zero_point;
   ASSERT_EQ(bias_offset, 64516);
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 64516 + 0 - (5 + 10 + 15 + 20) * 127 = 58166 = 0xE336
     0x36, 0xE3, 0, 0,
@@ -1221,8 +1198,9 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     15, 16,
     10, 11,
     20, 21,
-    // followed by 10 zeros to make up the difference with primary_tile
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    // followed by 10 kernel zero values to make up the difference with
+    // primary_tile
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
     // bias first (cr == 2 of them)
     // 64516 + 2 - (7 + 12 + 17 + 22) * 127 = 57152 = 0xDF40
     0x40, 0xDF, 0, 0,
@@ -1230,16 +1208,16 @@ TEST(PACK_QU8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     0x45, 0xDD, 0, 0,
     // then weights, channels first
     7, 8, 17, 18, 12, 13, 22, 23,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
     // bias
     // 64516 + 4 - (9 + 14 + 19 + 24) * 127 = 56138 = 0xDB4A
     0x4A, 0xDB, 0, 0,
-    0, 0, 0, 0,
+    _, _, _, _,
     // weights
-    9, 0, 19, 0, 14, 0, 24, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    9, _, 19, _, 14, _, 24, _,
+    127, 127, 127, 127, 127, 127, 127, 127, 127, 127,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
@@ -1254,7 +1232,7 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
   std::vector<int8_t> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
 
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1264,17 +1242,14 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first
     // (2 + 3 + 4) * 127 = -1143 = 0xFFFFFB89
     0x89, 0xFB, 0xFF, 0xFF,
@@ -1285,7 +1260,7 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
     3, 6,
     4, 7,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -1304,7 +1279,7 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   14, 15, 16,
                                       //   17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1314,17 +1289,14 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     // 0 - (5 + 6 + 7) * 127 = -2286 = 0xFFFFF712
@@ -1343,11 +1315,11 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // bias again
     // 4 - (17 + 18 + 19) * 127 = -6854 = 0xFFFFE53A
     0x3A, 0xE5, 0xFF, 0xFF,
-    0, 0, 0, 0,
+    _, _, _, _,
     // then weights, channels first
-    17, 0, 18, 0, 19, 0,
+    17, _, 18, _, 19, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
@@ -1365,7 +1337,7 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1375,17 +1347,14 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 0 - (2 + 3 + 4 + 5) * 127 = -1778 = 0xFFFFF90E
     0x0E, 0xF9, 0xFF, 0xFF,
@@ -1395,10 +1364,10 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
     2, 6,
     // go down the columns first
     4, 8, 3, 7, 5, 9,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -1422,7 +1391,7 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   21, 22,
                                       //   23, 24]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1432,17 +1401,14 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 0 - (5 + 6 + 7 + 8) * 127 = -3302 = 0xFFFFF31A
     0x1A, 0xF3, 0xFF, 0xFF,
@@ -1454,7 +1420,7 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7, 11,
     6, 10,
     8, 12,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     // bias first (cr == 2 of them)
     // 2 - (13 + 14 + 15 + 16) * 127 = -7364 = 0xFFFFE33C
@@ -1467,12 +1433,12 @@ TEST(PACK_QS8_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     // bias
     // 4 - (21 + 22 + 23 + 24) * 127 = -11426 = 0xFFFFD35E
     0x5E, 0xD3, 0xFF, 0xFF,
-    0, 0, 0, 0,
+    _, _, _, _,
     // weights
-    21, 0, 23, 0, 22, 0, 24, 0,
+    21, _, 23, _, 22, _, 24, _,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
@@ -1487,7 +1453,7 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
   std::vector<int8_t> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
 
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1497,17 +1463,14 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first
     // 0 - (2 + 4 + 6) * 127 = -1524 = 0xFFFFFA0C
     0x0C, 0xFA, 0xFF, 0xFF,
@@ -1518,7 +1481,7 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
     4, 5,
     6, 7,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -1535,7 +1498,7 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   10, 11, 12, 13, 14,
                                       //   15, 16, 17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1545,17 +1508,14 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     // 0 - (5 + 10 + 15) * 127 = -3810 = 0xFFFFF11E
@@ -1574,11 +1534,11 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // bias again
     // 4 - (9, 14, 19) * 127 = -5330 = 0xFFFFEB2E
     0x2E, 0xEB, 0xFF, 0xFF,
-    0, 0, 0, 0,
+    _, _, _, _,
     // then weights, channels first
-    9, 0, 14, 0, 19, 0,
+    9, _, 14, _, 19, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
@@ -1596,7 +1556,7 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1606,17 +1566,14 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 0 - (2 + 4 + 6 + 8) * 127 = -2540 = 0xFFFFF614
     0x14, 0xF6, 0xFF, 0xFF,
@@ -1626,10 +1583,10 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
     2, 3,
     // go down the columns first
     6, 7, 4, 5, 8, 9,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -1647,7 +1604,7 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   15, 16, 17, 18, 19,
                                       //   20, 21, 22, 23, 24]
   std::iota(k.begin(), k.end(), static_cast<int8_t>(b.size()));
-  std::vector<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint8_t> packed_weights(((primary_tile + sizeof(int32_t)/sizeof(uint8_t)) * round_up_po2(c, cr)));
 
   xnn_qs8_packing_params params = {};
   params.input_zero_point = 127;
@@ -1657,17 +1614,14 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       &params);
 
-  const std::vector<uint8_t> expected = {
+  const std::vector<Matcher<uint8_t>> expected = {
     // bias first (cr == 2 of them)
     // 0 - (5 + 10 + 15 + 20) * 127 = -6350 = 0xFFFFE732
     0x32, 0xE7, 0xFF, 0xFF,
@@ -1679,7 +1633,7 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     15, 16,
     10, 11,
     20, 21,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     // bias first (cr == 2 of them)
     // 2 - (7 + 12 + 17 + 22) * 127 = -7364 = 0xFFFFE33C
@@ -1692,12 +1646,12 @@ TEST(PACK_QS8_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     // bias
     // 4 - (9 + 14 + 19 + 24) * 127 = -8378 = 0xFFFFDF46
     0x46, 0xDF, 0xFF, 0xFF,
-    0, 0, 0, 0,
+    _, _, _, _,
     // weights
-    9, 0, 19, 0, 14, 0, 24, 0,
+    9, _, 19, _, 14, _, 24, _,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
@@ -1711,7 +1665,7 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0);  // b = [0, 1]
   std::vector<uint16_t> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_ghw_w(
       primary_tile,
@@ -1719,17 +1673,14 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first
     0, 1,
     // then weights, channels first
@@ -1737,7 +1688,7 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
     3, 6,
     4, 7,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -1756,7 +1707,7 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   14, 15, 16,
                                       //   17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_ghw_w(
       primary_tile,
@@ -1764,17 +1715,14 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     0, 1,
@@ -1785,11 +1733,11 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // then weights, channels first
     11, 14, 12, 15, 13, 16,
     // bias again
-    4, 0,
+    4, _,
     // then weights, channels first
-    17, 0, 18, 0, 19, 0,
+    17, _, 18, _, 19, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
@@ -1807,7 +1755,7 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_ghw_w(
       primary_tile,
@@ -1815,27 +1763,24 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first (cr == 2 of them)
     0, 1,
     // then weights, channels first
     2, 6,
     // go down the columns first
     4, 8, 3, 7, 5, 9,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -1859,7 +1804,7 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   21, 22,
                                       //   23, 24]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_ghw_w(
       primary_tile,
@@ -1867,17 +1812,14 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first (cr == 2 of them)
     0, 1,
     // then weights, channels first
@@ -1886,7 +1828,7 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7, 11,
     6, 10,
     8, 12,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     // bias first (cr == 2 of them)
     2, 3,
@@ -1894,12 +1836,12 @@ TEST(PACK_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     13, 17, 15, 19, 14, 18, 16, 20,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     // bias
-    4, 0,
+    4, _,
     // weights
-    21, 0, 23, 0, 22, 0, 24, 0,
+    21, _, 23, _, 22, _, 24, _,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
@@ -1913,7 +1855,7 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0);  // b = [0, 1]
   std::vector<uint16_t> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_hwg_w(
       primary_tile,
@@ -1921,17 +1863,14 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first
     0, 1,
     // then weights, channels first
@@ -1939,7 +1878,7 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
     4, 5,
     6, 7,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -1956,7 +1895,7 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   10, 11, 12, 13, 14,
                                       //   15, 16, 17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_hwg_w(
       primary_tile,
@@ -1964,17 +1903,14 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     0, 1,
@@ -1985,11 +1921,11 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // then weights, channels first
     7, 8, 12, 13, 17, 18,
     // bias again
-    4, 0,
+    4, _,
     // then weights, channels first
-    9, 0, 14, 0, 19, 0,
+    9, _, 14, _, 19, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
@@ -2007,7 +1943,7 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_hwg_w(
       primary_tile,
@@ -2015,27 +1951,24 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first (cr == 2 of them)
     0, 1,
     // then weights, channels first
     2, 3,
     // go down the columns first
     6, 7, 4, 5, 8, 9,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -2053,7 +1986,7 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   15, 16, 17, 18, 19,
                                       //   20, 21, 22, 23, 24]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<uint16_t> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f16_dwconv_hwg_w(
       primary_tile,
@@ -2061,17 +1994,14 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first (cr == 2 of them)
     0, 1,
     // then weights, channels first
@@ -2080,7 +2010,7 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     15, 16,
     10, 11,
     20, 21,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     // bias first (cr == 2 of them)
     2, 3,
@@ -2088,12 +2018,12 @@ TEST(PACK_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7, 8, 17, 18, 12, 13, 22, 23,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     // bias
-    4, 0,
+    4, _,
     // weights
-    9, 0, 19, 0, 14, 0, 24, 0,
+    9, _, 19, _, 14, _, 24, _,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
@@ -2107,7 +2037,7 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1]
   std::vector<float> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_ghw_w(
       primary_tile,
@@ -2115,17 +2045,14 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f, 1.0f,
     // then weights, channels first
@@ -2133,7 +2060,7 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
     3.0f, 6.0f,
     4.0f, 7.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -2152,7 +2079,7 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   14, 15, 16,
                                       //   17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_ghw_w(
       primary_tile,
@@ -2160,17 +2087,14 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
@@ -2181,11 +2105,11 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // then weights, channels first
     11.0f, 14.0f, 12.0f, 15.0f, 13.0f, 16.0f,
     // bias again
-    4.0f, 0.0f,
+    4.0f, _,
     // then weights, channels first
-    17.0f, 0.0f, 18.0f, 0.0f, 19.0f, 0.0f,
+    17.0f, _, 18.0f, _, 19.0f, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
@@ -2203,7 +2127,7 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_ghw_w(
       primary_tile,
@@ -2211,27 +2135,24 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
     2.0f, 6.0f,
     // go down the columns first
     4.0f, 8.0f, 3.0f, 7.0f, 5.0f, 9.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -2255,7 +2176,7 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   21, 22,
                                       //   23, 24]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_ghw_w(
       primary_tile,
@@ -2263,17 +2184,14 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
@@ -2282,7 +2200,7 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7.0f, 11.0f,
     6.0f, 10.0f,
     8.0f, 12.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias first (cr == 2 of them)
     2.0f, 3.0f,
@@ -2290,12 +2208,12 @@ TEST(PACK_F32_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     13.0f, 17.0f, 15.0f, 19.0f, 14.0f, 18.0f, 16.0f, 20.0f,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias
-    4.0f, 0.0f,
+    4.0f, _,
     // weights
-    21.0f, 0.0f, 23.0f, 0.0f, 22.0f, 0.0f, 24.0f, 0.0f,
+    21.0f, _, 23.0f, _, 22.0f, _, 24.0f, _,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
@@ -2309,7 +2227,7 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1]
   std::vector<float> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_hwg_w(
       primary_tile,
@@ -2317,17 +2235,14 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f, 1.0f,
     // then weights, channels first
@@ -2335,7 +2250,7 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
     4.0f, 5.0f,
     6.0f, 7.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -2352,7 +2267,7 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   10, 11, 12, 13, 14,
                                       //   15, 16, 17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_hwg_w(
       primary_tile,
@@ -2360,17 +2275,14 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
@@ -2381,11 +2293,11 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // then weights, channels first
     7.0f, 8.0f, 12.0f, 13.0f, 17.0f, 18.0f,
     // bias again
-    4.0f, 0.0f,
+    4.0f, _,
     // then weights, channels first
-    9.0f, 0.0f, 14.0f, 0.0f, 19.0f, 0.0f,
+    9.0f, _, 14.0f, _, 19.0f, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
@@ -2403,7 +2315,7 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_hwg_w(
       primary_tile,
@@ -2411,27 +2323,24 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
     2.0f, 3.0f,
     // go down the columns first
     6.0f, 7.0f, 4.0f, 5.0f, 8.0f, 9.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -2449,7 +2358,7 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   15, 16, 17, 18, 19,
                                       //   20, 21, 22, 23, 24]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<float> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_dwconv_hwg_w(
       primary_tile,
@@ -2457,17 +2366,14 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      1,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
@@ -2476,7 +2382,7 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     15.0f, 16.0f,
     10.0f, 11.0f,
     20.0f, 21.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias first (cr == 2 of them)
     2.0f, 3.0f,
@@ -2484,12 +2390,12 @@ TEST(PACK_F32_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7.0f, 8.0f, 17.0f, 18.0f, 12.0f, 13.0f, 22.0f, 23.0f,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias
-    4.0f, 0.0f,
+    4.0f, _,
     // weights
-    9.0f, 0.0f, 19.0f, 0.0f, 14.0f, 0.0f, 24.0f, 0.0f,
+    9.0f, _, 19.0f, _, 14.0f, _, 24.0f, _,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
@@ -2503,7 +2409,7 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1]
   std::vector<float> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_ghw_w(
       primary_tile,
@@ -2511,17 +2417,14 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f, 1.0f,
     // then weights, channels first
@@ -2529,7 +2432,7 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
     3.0f, 6.0f,
     4.0f, 7.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -2548,7 +2451,7 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   14, 15, 16,
                                       //   17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_ghw_w(
       primary_tile,
@@ -2556,17 +2459,14 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
@@ -2577,11 +2477,11 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // then weights, channels first
     11.0f, 14.0f, 12.0f, 15.0f, 13.0f, 16.0f,
     // bias again
-    4.0f, 0.0f,
+    4.0f, _,
     // then weights, channels first
-    17.0f, 0.0f, 18.0f, 0.0f, 19.0f, 0.0f,
+    17.0f, _, 18.0f, _, 19.0f, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
@@ -2599,7 +2499,7 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_ghw_w(
       primary_tile,
@@ -2607,27 +2507,24 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
     2.0f, 6.0f,
     // go down the columns first
     4.0f, 8.0f, 3.0f, 7.0f, 5.0f, 9.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
@@ -2651,7 +2548,7 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   21, 22,
                                       //   23, 24]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_ghw_w(
       primary_tile,
@@ -2659,17 +2556,14 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
@@ -2678,7 +2572,7 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7.0f, 11.0f,
     6.0f, 10.0f,
     8.0f, 12.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias first (cr == 2 of them)
     2.0f, 3.0f,
@@ -2686,12 +2580,12 @@ TEST(PACK_F32_TO_F16_DWCONV_GHW_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     13.0f, 17.0f, 15.0f, 19.0f, 14.0f, 18.0f, 16.0f, 20.0f,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias
-    4.0f, 0.0f,
+    4.0f, _,
     // weights
-    21.0f, 0.0f, 23.0f, 0.0f, 22.0f, 0.0f, 24.0f, 0.0f,
+    21.0f, _, 23.0f, _, 22.0f, _, 24.0f, _,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
@@ -2705,7 +2599,7 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1]
   std::vector<float> k(c * h * w);  // k = [2, 3, 4, 5, 6, 7]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_hwg_w(
       primary_tile,
@@ -2713,17 +2607,14 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f, 1.0f,
     // then weights, channels first
@@ -2731,7 +2622,7 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
     4.0f, 5.0f,
     6.0f, 7.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
@@ -2748,7 +2639,7 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
                                       //   10, 11, 12, 13, 14,
                                       //   15, 16, 17, 18, 19]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_hwg_w(
       primary_tile,
@@ -2756,17 +2647,14 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // cr blocks
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
@@ -2777,11 +2665,11 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_eq_kernel_size_channels_gt_cr) {
     // then weights, channels first
     7.0f, 8.0f, 12.0f, 13.0f, 17.0f, 18.0f,
     // bias again
-    4.0f, 0.0f,
+    4.0f, _,
     // then weights, channels first
-    9.0f, 0.0f, 14.0f, 0.0f, 19.0f, 0.0f,
+    9.0f, _, 14.0f, _, 19.0f, _,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, testing::ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
@@ -2799,7 +2687,7 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
                                       //   6, 7,
                                       //   8, 9]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_hwg_w(
       primary_tile,
@@ -2807,27 +2695,24 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
     2.0f, 3.0f,
     // go down the columns first
     6.0f, 7.0f, 4.0f, 5.0f, 8.0f, 9.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, testing::ElementsAreArray(expected));
 
 }
 
@@ -2846,7 +2731,7 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
                                       //   15, 16, 17, 18, 19,
                                       //   20, 21, 22, 23, 24]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
+  xnnpack::Buffer<xnn_float16> packed_weights(((primary_tile + 1) * round_up_po2(c, cr)));
 
   xnn_pack_f32_to_f16_dwconv_hwg_w(
       primary_tile,
@@ -2854,17 +2739,14 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
       w,
       c,
       cr,
-      cr,
-      cr,
       k.data(),
       b.data(),
       /*scale=*/nullptr,
       packed_weights.data(),
       0,
-      0,
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first (cr == 2 of them)
     0.0f, 1.0f,
     // then weights, channels first
@@ -2873,7 +2755,7 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     15.0f, 16.0f,
     10.0f, 11.0f,
     20.0f, 21.0f,
-    // followed by 10 zeros to make up the difference with primary_tile
+    // followed by 10 zero values to make up the difference with primary_tile
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias first (cr == 2 of them)
     2.0f, 3.0f,
@@ -2881,12 +2763,12 @@ TEST(PACK_F32_TO_F16_DWCONV_HWG_W, primary_tile_gt_kernel_size_channels_gt_cr) {
     7.0f, 8.0f, 17.0f, 18.0f, 12.0f, 13.0f, 22.0f, 23.0f,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     // bias
-    4.0f, 0.0f,
+    4.0f, _,
     // weights
-    9.0f, 0.0f, 19.0f, 0.0f, 14.0f, 0.0f, 24.0f, 0.0f,
+    9.0f, _, 19.0f, _, 14.0f, _, 24.0f, _,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, testing::ElementsAreArray(expected));
 
 }
 
@@ -2899,7 +2781,7 @@ TEST(PACK_F32_TO_F16_CHW_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0]
   std::vector<float> k(h * w);  // k = [1, 2, 3]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(primary_tile + 1);
+  xnnpack::Buffer<xnn_float16> packed_weights(primary_tile + 1);
 
   xnn_pack_f32_to_f16_chw_dwconv_hwg_w(
       primary_tile,  // kernel size
@@ -2909,7 +2791,7 @@ TEST(PACK_F32_TO_F16_CHW_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f,
     // then weights
@@ -2917,7 +2799,7 @@ TEST(PACK_F32_TO_F16_CHW_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
     2.0f,
     3.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 
 }
 
@@ -2932,7 +2814,7 @@ TEST(PACK_F32_TO_F16_CHW_DWCONV_HWG_W, groups_gt_1) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0, 1, 2]
   std::vector<float> k(g * h * w);  // k = [3, 4, 5, 6, 7, 8, 9, 10, 11 ]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(g + g * h * w);
+  xnnpack::Buffer<xnn_float16> packed_weights(g + g * h * w);
 
   xnn_pack_f32_to_f16_chw_dwconv_hwg_w(
       primary_tile,  // kernel size
@@ -2942,7 +2824,7 @@ TEST(PACK_F32_TO_F16_CHW_DWCONV_HWG_W, groups_gt_1) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f,
     // then weights
@@ -2964,7 +2846,7 @@ TEST(PACK_F32_TO_F16_CHW_DWCONV_HWG_W, groups_gt_1) {
     8.0f,
     11.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 
 }
 
@@ -2977,7 +2859,7 @@ TEST(PACK_F16_CHW_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0);  // b = [0]
   std::vector<uint16_t> k(h * w);  // k = [1, 2, 3]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(primary_tile + 1);
+  xnnpack::Buffer<uint16_t> packed_weights(primary_tile + 1);
 
   xnn_pack_f16_chw_dwconv_hwg_w(
       primary_tile,  // kernel size
@@ -2987,7 +2869,7 @@ TEST(PACK_F16_CHW_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first
     0,
     // then weights
@@ -2995,7 +2877,7 @@ TEST(PACK_F16_CHW_DWCONV_HWG_W, primary_tile_eq_kernel_size) {
     2,
     3,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_CHW_DWCONV_HWG_W, groups_gt_1) {
@@ -3008,7 +2890,7 @@ TEST(PACK_F16_CHW_DWCONV_HWG_W, groups_gt_1) {
   std::iota(b.begin(), b.end(), 0);  // b = [0, 1, 2]
   std::vector<uint16_t> k(g * h * w);  // k = [3, 4, 5, 6, 7, 8, 9, 10, 11 ]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(g + g * h * w);
+  xnnpack::Buffer<uint16_t> packed_weights(g + g * h * w);
 
   xnn_pack_f16_chw_dwconv_hwg_w(
       primary_tile,  // kernel size
@@ -3018,7 +2900,7 @@ TEST(PACK_F16_CHW_DWCONV_HWG_W, groups_gt_1) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first
     0,
     // then weights
@@ -3040,7 +2922,7 @@ TEST(PACK_F16_CHW_DWCONV_HWG_W, groups_gt_1) {
     8,
     11,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 
@@ -3053,7 +2935,7 @@ TEST(PACK_F16_CHW_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0);  // b = [0]
   std::vector<uint16_t> k(h * w);  // k = [1, 2, 3]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(primary_tile + 1);
+  xnnpack::Buffer<uint16_t> packed_weights(primary_tile + 1);
 
   xnn_pack_f16_chw_dwconv_ghw_w(
       primary_tile,  // kernel size
@@ -3063,7 +2945,7 @@ TEST(PACK_F16_CHW_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first
     0,
     // then weights
@@ -3071,7 +2953,7 @@ TEST(PACK_F16_CHW_DWCONV_GHW_W, primary_tile_eq_kernel_size) {
     2,
     3,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_CHW_DWCONV_GHW_W, groups_gt_1) {
@@ -3084,7 +2966,7 @@ TEST(PACK_F16_CHW_DWCONV_GHW_W, groups_gt_1) {
   std::iota(b.begin(), b.end(), 0);  // b = [0, 1, 2]
   std::vector<uint16_t> k(g * h * w);  // k = [3, 4, 5, 6, 7, 8, 9, 10, 11 ]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(g + g * h * w);
+  xnnpack::Buffer<uint16_t> packed_weights(g + g * h * w);
 
   xnn_pack_f16_chw_dwconv_ghw_w(
       primary_tile,  // kernel size
@@ -3094,7 +2976,7 @@ TEST(PACK_F16_CHW_DWCONV_GHW_W, groups_gt_1) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first
     0,
     // then weights
@@ -3116,7 +2998,7 @@ TEST(PACK_F16_CHW_DWCONV_GHW_W, groups_gt_1) {
     10,
     11,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 
@@ -3129,7 +3011,7 @@ TEST(PACK_F32_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0]
   std::vector<float> k(h * w);  // k = [3, 4, 5]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<float> packed_weights(primary_tile * 2);
+  xnnpack::Buffer<float> packed_weights(primary_tile * 2);
 
   xnn_pack_f32_dconv_oki_w(
       h, // nc
@@ -3142,7 +3024,7 @@ TEST(PACK_F32_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f,
     // then weight
@@ -3156,7 +3038,7 @@ TEST(PACK_F32_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
     // then weight
     5.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
@@ -3168,7 +3050,7 @@ TEST(PACK_F32_TO_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0.0f);  // b = [0]
   std::vector<float> k(h * w);  // k = [3, 4, 5]
   std::iota(k.begin(), k.end(), static_cast<float>(b.size()));
-  std::vector<xnn_float16> packed_weights(primary_tile * 2);
+  xnnpack::Buffer<xnn_float16> packed_weights(primary_tile * 2);
 
   xnn_pack_f32_to_f16_dconv_oki_w(
       h, // nc
@@ -3181,7 +3063,7 @@ TEST(PACK_F32_TO_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f,
     // then weight
@@ -3195,7 +3077,7 @@ TEST(PACK_F32_TO_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
     // then weight
     5.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F32_TO_F16_DWCONV_OKI_W, null_bias) {
@@ -3205,7 +3087,7 @@ TEST(PACK_F32_TO_F16_DWCONV_OKI_W, null_bias) {
 
   std::vector<float> k(h * w);  // k = [3, 4, 5]
   std::iota(k.begin(), k.end(), 3.0f);
-  std::vector<xnn_float16> packed_weights(primary_tile * 2);
+  xnnpack::Buffer<xnn_float16> packed_weights(primary_tile * 2);
 
   xnn_pack_f32_to_f16_dconv_oki_w(
       h, // nc
@@ -3218,7 +3100,7 @@ TEST(PACK_F32_TO_F16_DWCONV_OKI_W, null_bias) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<float> expected = {
+  const std::vector<Matcher<float>> expected = {
     // bias first
     0.0f,
     // then weight
@@ -3232,7 +3114,7 @@ TEST(PACK_F32_TO_F16_DWCONV_OKI_W, null_bias) {
     // then weight
     5.0f,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
 
 TEST(PACK_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
@@ -3244,7 +3126,7 @@ TEST(PACK_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
   std::iota(b.begin(), b.end(), 0);  // b = [0, 1, 2]
   std::vector<uint16_t> k(h * w);  // k = [3, 4, 5]
   std::iota(k.begin(), k.end(), static_cast<uint16_t>(b.size()));
-  std::vector<uint16_t> packed_weights(primary_tile * 2);
+  xnnpack::Buffer<uint16_t> packed_weights(primary_tile * 2);
 
   xnn_pack_f16_dconv_oki_w(
       h, // nc
@@ -3257,7 +3139,7 @@ TEST(PACK_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
       packed_weights.data(),
       nullptr);
 
-  const std::vector<uint16_t> expected = {
+  const std::vector<Matcher<uint16_t>> expected = {
     // bias first
     0,
     // then weight
@@ -3271,5 +3153,7 @@ TEST(PACK_F16_DWCONV_OKI_W, primary_tile_eq_kernel_size) {
     // then weight
     5,
   };
-  EXPECT_THAT(packed_weights, testing::Pointwise(testing::Eq(), expected));
+  EXPECT_THAT(packed_weights, ElementsAreArray(expected));
 }
+
+}  // namespace

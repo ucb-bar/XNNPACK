@@ -29,10 +29,10 @@ $else:
   #define xnn_load_tail_safe_impl(x, c) xnn_load_tail_safe_${DATATYPE}(x, c)
   #define xnn_pre_store_impl(x) x
 
-#include "xnnpack/simd/${DATATYPE_IMPL}-${ARCH}.h"
+#include "src/xnnpack/simd/${DATATYPE_IMPL}-${ARCH}.h"
 
-#include "xnnpack/common.h"
-#include "xnnpack/microparams.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
 
 $CTYPE = {"f32": "float", "f16": "xnn_float16", "u8": "uint8_t", "s8": "int8_t"}[DATATYPE]
 $CTYPE_IMPL = {"f32": "float", "f16": "xnn_float16", "s16": "int16_t", "u8": "uint8_t", "s8": "int8_t"}[DATATYPE_IMPL]
@@ -42,6 +42,7 @@ void xnn_${DATATYPE}_maxpool_minmax_ukernel_9p__${ARCH}_u${SIMD_SIZE}(
     size_t channels,
     const ${CTYPE}** input,
     size_t input_offset,
+    size_t input_pixel_stride,
     ${CTYPE}* output,
     size_t input_increment,
     size_t output_increment,
@@ -181,6 +182,7 @@ $elif DATATYPE == "f16" and ARCH != "neonfp16arith":
     }
 
     input = (const ${CTYPE}**) ((uintptr_t) input + input_increment);
+    input_offset += input_pixel_stride;
     output = (${CTYPE}*) ((uintptr_t) output + output_increment);
   } while (--output_pixels != 0);
 }

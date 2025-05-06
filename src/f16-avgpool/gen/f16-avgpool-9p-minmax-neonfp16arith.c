@@ -1,3 +1,4 @@
+// clang-format off
 // Auto-generated file. Do not edit!
 //   Template: src/f32-avgpool/avgpool.c.in
 //   Generator: tools/xngen
@@ -11,10 +12,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/simd/f16-neonfp16arith.h"
+#include "src/xnnpack/simd/f16-neonfp16arith.h"
 
-#include "xnnpack/common.h"
-#include "xnnpack/microparams.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
 
 void xnn_f16_avgpool_minmax_ukernel_9p__neonfp16arith_u8(
     size_t output_pixels,
@@ -22,6 +23,7 @@ void xnn_f16_avgpool_minmax_ukernel_9p__neonfp16arith_u8(
     size_t channels,
     const xnn_float16** input,
     size_t input_offset,
+    size_t input_pixel_stride,
     const xnn_float16* zero,
     const xnn_float16* multiplier,
     xnn_float16* output,
@@ -259,6 +261,7 @@ void xnn_f16_avgpool_minmax_ukernel_9p__neonfp16arith_u8(
     }
 
     input = (const xnn_float16**) ((uintptr_t) input + input_increment);
+    input_offset += input_pixel_stride;
     output = (xnn_float16*) ((uintptr_t) output + output_increment);
   } while (--output_pixels != 0);
 }

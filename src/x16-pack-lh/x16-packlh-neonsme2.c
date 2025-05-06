@@ -10,17 +10,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/pack-lh.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/pack-lh.h"
 
 #if XNN_ENABLE_KLEIDIAI
-  // Keep this line indented to avoid it being pulled out of the #ifdef when the
-  // sources are amalgamated.
-  #include "kai/ukernels/matmul/pack/kai_lhs_pack_x16p2vlx2_x16_sme.h"
-  #include "kai/ukernels/matmul/pack/kai_lhs_pack_f32p2vlx1_f32_sme.h"
+#include "kai/ukernels/matmul/pack/kai_lhs_pack_f32p2vlx1_f32_sme.h"
+#include "kai/ukernels/matmul/pack/kai_lhs_pack_x16p2vlx2_x16_sme.h"
 #endif  // XNN_ENABLE_KLEIDIAI
-
 
 // This function just wraps KleidiAI's `kai_run_lhs_pack_x16p2vlx2_x16_sme`, but
 // with a name that is recognized by our tooling.

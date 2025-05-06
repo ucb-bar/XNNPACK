@@ -10,21 +10,21 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/allocator.h"
-#include "xnnpack/common.h"
-#include "xnnpack/compute.h"
-#include "xnnpack/config-types.h"
-#include "xnnpack/config.h"
-#include "xnnpack/log.h"
-#include "xnnpack/math.h"
-#include "xnnpack/microkernel-type.h"
-#include "xnnpack/normalization.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator-utils.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/params.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/allocator.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/compute.h"
+#include "src/xnnpack/config-types.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microkernel-type.h"
+#include "src/xnnpack/normalization.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator-utils.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/params.h"
+#include <pthreadpool.h>
 
 /// Reorder the data in array using the indices in loop_order.
 ///
@@ -328,8 +328,11 @@ static enum xnn_status reshape_transpose_nd(
   struct univector_contiguous_context* univector_context = &transpose_op->context.univector_contiguous;
   switch (normalized_dims) {
     case 1:
-      transpose_op->compute[0].type = xnn_parallelization_type_1d_tile_1d;
-      transpose_op->compute[0].task_1d_tile_1d = (pthreadpool_task_1d_tile_1d_t) xnn_compute_univector_contiguous;
+      transpose_op->compute[0].type =
+          xnn_parallelization_type_1d_tile_1d_dynamic;
+      transpose_op->compute[0].task_1d_tile_1d_dynamic =
+          (pthreadpool_task_1d_tile_1d_dynamic_t)
+              xnn_compute_univector_contiguous;
       transpose_op->compute[0].range[0] = normalized_element_size;
       transpose_op->compute[0].tile[0] = normalized_element_size;
       univector_context->ukernel = transpose_config->copy;
@@ -337,27 +340,36 @@ static enum xnn_status reshape_transpose_nd(
       univector_context->log2_ysize = 0;
       break;
     case 2:
-      transpose_op->compute[0].type = xnn_parallelization_type_2d_tile_2d;
+      transpose_op->compute[0].type =
+          xnn_parallelization_type_2d_tile_2d_dynamic;
       if (variable_size_ukernel) {
-        transpose_op->compute[0].task_2d_tile_2d = (pthreadpool_task_2d_tile_2d_t) xnn_compute_transposev_2d;
+        transpose_op->compute[0].task_2d_tile_2d_dynamic =
+            (pthreadpool_task_2d_tile_2d_dynamic_t)xnn_compute_transposev_2d;
       } else {
-        transpose_op->compute[0].task_2d_tile_2d = (pthreadpool_task_2d_tile_2d_t) xnn_compute_transposec_2d;
+        transpose_op->compute[0].task_2d_tile_2d_dynamic =
+            (pthreadpool_task_2d_tile_2d_dynamic_t)xnn_compute_transposec_2d;
       }
       break;
     case 3:
-      transpose_op->compute[0].type = xnn_parallelization_type_3d_tile_2d;
+      transpose_op->compute[0].type =
+          xnn_parallelization_type_3d_tile_2d_dynamic;
       if (variable_size_ukernel) {
-        transpose_op->compute[0].task_3d_tile_2d = (pthreadpool_task_3d_tile_2d_t) xnn_compute_transposev_3d;
+        transpose_op->compute[0].task_3d_tile_2d_dynamic =
+            (pthreadpool_task_3d_tile_2d_dynamic_t)xnn_compute_transposev_3d;
       } else {
-        transpose_op->compute[0].task_3d_tile_2d = (pthreadpool_task_3d_tile_2d_t) xnn_compute_transposec_3d;
+        transpose_op->compute[0].task_3d_tile_2d_dynamic =
+            (pthreadpool_task_3d_tile_2d_dynamic_t)xnn_compute_transposec_3d;
       }
       break;
     case 4:
-      transpose_op->compute[0].type = xnn_parallelization_type_4d_tile_2d;
+      transpose_op->compute[0].type =
+          xnn_parallelization_type_4d_tile_2d_dynamic;
       if (variable_size_ukernel) {
-        transpose_op->compute[0].task_4d_tile_2d = (pthreadpool_task_4d_tile_2d_t) xnn_compute_transposev_4d;
+        transpose_op->compute[0].task_4d_tile_2d_dynamic =
+            (pthreadpool_task_4d_tile_2d_dynamic_t)xnn_compute_transposev_4d;
       } else {
-        transpose_op->compute[0].task_4d_tile_2d = (pthreadpool_task_4d_tile_2d_t) xnn_compute_transposec_4d;
+        transpose_op->compute[0].task_4d_tile_2d_dynamic =
+            (pthreadpool_task_4d_tile_2d_dynamic_t)xnn_compute_transposec_4d;
       }
       break;
     case 5:

@@ -9,19 +9,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "xnnpack.h"
-#include "xnnpack/allocator.h"
-#include "xnnpack/common.h"
-#include "xnnpack/compute.h"
-#include "xnnpack/config-types.h"
-#include "xnnpack/config.h"
-#include "xnnpack/log.h"
-#include "xnnpack/normalization.h"
-#include "xnnpack/operator-type.h"
-#include "xnnpack/operator-utils.h"
-#include "xnnpack/operator.h"
-#include "xnnpack/params.h"
-#include "pthreadpool.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/allocator.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/compute.h"
+#include "src/xnnpack/config-types.h"
+#include "src/xnnpack/config.h"
+#include "src/xnnpack/log.h"
+#include "src/xnnpack/normalization.h"
+#include "src/xnnpack/operator-type.h"
+#include "src/xnnpack/operator-utils.h"
+#include "src/xnnpack/operator.h"
+#include "src/xnnpack/params.h"
+#include <pthreadpool.h>
 
 static void init_slice_nd(
     uint32_t flags,
@@ -145,11 +145,9 @@ static enum xnn_status reshape_slice_nd(
   }
 
   for (size_t i = 0; i < num_dims; i++) {
-    if (input_shape[i] == 0) {
-      xnn_log_error(
-          "failed to reshape %s operator: input shape dimension #%zu is zero",
-          xnn_operator_type_to_string_v2(slice_op), i);
-      return xnn_status_invalid_parameter;
+    if (sizes[i] == 0) {
+      slice_op->state = xnn_run_state_skip;
+      return xnn_status_success;
     }
     if (offsets[i] >= input_shape[i]) {
       xnn_log_error(
@@ -166,7 +164,7 @@ static enum xnn_status reshape_slice_nd(
           input_shape[i]);
       return xnn_status_unsupported_parameter;
     }
-    if (sizes[i] > 0 && offsets[i] + sizes[i] > input_shape[i]) {
+    if (offsets[i] + sizes[i] > input_shape[i]) {
       xnn_log_error(
           "failed to reshape %s operator with %zu offsets[%zu] and %zu "
           "sizes[%zu]: offset + size <= %zu",

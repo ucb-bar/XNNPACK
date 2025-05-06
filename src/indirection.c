@@ -6,7 +6,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include "xnnpack/indirection.h"
+#include "src/xnnpack/indirection.h"
 
 #include <assert.h>
 #include <fxdiv.h>
@@ -14,11 +14,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack.h"
-#include "xnnpack/common.h"
-#include "xnnpack/math.h"
-#include "xnnpack/microparams.h"
-#include "xnnpack/operator.h"
+#include "include/xnnpack.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
+#include "src/xnnpack/operator.h"
 
 void xnn_indirection_init_conv2d(
   size_t output_tile_size,
@@ -361,37 +361,47 @@ void xnn_indirection_init_maxpool2d(
   const size_t step_height,
   const size_t step_width)
 {
+  assert(input_width > 0);
+  assert(input_height > 0);
   const bool any_dilation = (dilation_height | dilation_width) > 1;
 
   if (any_dilation) {
     // Clamp to the border doesn't work for pooling with dilation.
-    const size_t adjusted_padding_top = input_padding_top % dilation_height;
-    const size_t adjusted_padding_left = input_padding_left % dilation_width;
+    // To implement this correctly, we need to move toward the valid region in
+    // steps of the dilation factor, until we are in bounds.
     for (size_t output_y = 0; output_y < output_height; output_y++) {
-      for (size_t pooling_y = 0; pooling_y < kernel_height; pooling_y++) {
-        size_t safe_input_y = output_y * stride_height;
-        if XNN_UNPREDICTABLE(safe_input_y < adjusted_padding_top) {
-          safe_input_y += dilation_height;
-        }
-        safe_input_y -= adjusted_padding_top;
+      size_t safe_input_y = output_y * stride_height;
+      while (safe_input_y < input_padding_top) {
+        safe_input_y += dilation_height;
+      }
+      safe_input_y -= input_padding_top;
 
-        size_t input_y = output_y * stride_height + pooling_y * dilation_height - input_padding_top;
-        if XNN_UNPREDICTABLE(input_y >= input_height) {
-          input_y = safe_input_y;
+      for (size_t pooling_y = 0; pooling_y < kernel_height; pooling_y++) {
+        size_t input_y = output_y * stride_height + pooling_y * dilation_height;
+        while (input_y < input_padding_top) {
+          input_y += dilation_height;
         }
+        while (input_y >= input_height + input_padding_top) {
+          input_y = doz(input_y, dilation_height);
+        }
+        input_y -= input_padding_top;
 
         for (size_t output_x = 0; output_x < output_width; output_x++) {
-          for (size_t pooling_x = 0; pooling_x < kernel_width; pooling_x++) {
-            size_t safe_input_x = output_x * stride_width;
-            if XNN_UNPREDICTABLE(safe_input_x < adjusted_padding_left) {
-              safe_input_x += dilation_width;
-            }
-            safe_input_x -= adjusted_padding_left;
+          size_t safe_input_x = output_x * stride_width;
+          while (safe_input_x < input_padding_left) {
+            safe_input_x += dilation_width;
+          }
+          safe_input_x -= input_padding_left;
 
-            size_t input_x = output_x * stride_width + pooling_x * dilation_width - input_padding_left;
-            if XNN_UNPREDICTABLE(input_x >= input_width) {
-              input_x = safe_input_x;
+          for (size_t pooling_x = 0; pooling_x < kernel_width; pooling_x++) {
+            size_t input_x = output_x * stride_width + pooling_x * dilation_width;
+            while (input_x < input_padding_left) {
+              input_x += dilation_width;
             }
+            while (input_x >= input_width + input_padding_left) {
+              input_x = doz(input_x, dilation_width);
+            }
+            input_x -= input_padding_left;
 
             const size_t index = output_y * step_height + output_x * step_width * kernel_height + pooling_x * kernel_height + pooling_y;
             indirection_buffer[index] = (const void*) ((uintptr_t) input + (input_y * input_width + input_x) * input_pixel_stride);

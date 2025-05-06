@@ -8,10 +8,10 @@ $assert(SIMD_SIZE > 0)
 #include <stddef.h>
 #include <stdint.h>
 
-#include "xnnpack/simd/${DATATYPE}-${ARCH}.h"
+#include "src/xnnpack/simd/${DATATYPE}-${ARCH}.h"
 
-#include "xnnpack/common.h"
-#include "xnnpack/microparams.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
 
 $CTYPE = {"f32": "float", "f16": "xnn_float16"}[DATATYPE]
 void xnn_${DATATYPE}_avgpool_minmax_ukernel_9p__${ARCH}_u${SIMD_SIZE}(
@@ -20,6 +20,7 @@ void xnn_${DATATYPE}_avgpool_minmax_ukernel_9p__${ARCH}_u${SIMD_SIZE}(
     size_t channels,
     const ${CTYPE}** input,
     size_t input_offset,
+    size_t input_pixel_stride,
     const ${CTYPE}* zero,
     const ${CTYPE}* multiplier,
     ${CTYPE}* output,
@@ -153,6 +154,7 @@ void xnn_${DATATYPE}_avgpool_minmax_ukernel_9p__${ARCH}_u${SIMD_SIZE}(
       }
 
     input = (const ${CTYPE}**) ((uintptr_t) input + input_increment);
+    input_offset += input_pixel_stride;
     output = (${CTYPE}*) ((uintptr_t) output + output_increment);
   } while (--output_pixels != 0);
 }

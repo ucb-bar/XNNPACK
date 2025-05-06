@@ -7,9 +7,9 @@
 
 #include <emmintrin.h>
 
-#include "xnnpack/common.h"
-#include "xnnpack/argmaxpool.h"
-#include "xnnpack/simd/f32-sse2.h"
+#include "src/xnnpack/common.h"
+#include "src/xnnpack/argmaxpool.h"
+#include "src/xnnpack/simd/f32-sse2.h"
 
 static XNN_INLINE __m128i
 xnn_load_tail_safe_u32(const uint32_t* input, size_t num_elements) {
@@ -22,10 +22,12 @@ void xnn_f32_argmaxpool_ukernel_9p8x__sse2_c4(
     size_t channels,
     const float** input,
     size_t input_offset,
+    size_t input_pixel_stride,
     float* output,
     uint32_t* index,
     size_t input_increment,
-    size_t output_increment) XNN_OOB_READS
+    size_t output_increment,
+    size_t index_increment) XNN_OOB_READS
 {
   assert(output_pixels != 0);
   assert(pooling_elements != 0);
@@ -236,7 +238,8 @@ void xnn_f32_argmaxpool_ukernel_9p8x__sse2_c4(
     }
 
     input = (const float**) ((uintptr_t) input + input_increment);
+    input_offset += input_pixel_stride;
     output = (float*) ((uintptr_t) output + output_increment);
-    index += channels;
+    index = (uint32_t*) ((uintptr_t) index + index_increment);
   } while (--output_pixels != 0);
 }
