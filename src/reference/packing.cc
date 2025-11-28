@@ -24,29 +24,37 @@
 #include "src/xnnpack/unaligned.h"
 
 #if XNN_ENABLE_KLEIDIAI
+#include "kai/ukernels/matmul/pack/kai_rhs_imatmul_pack_kxn_qsi8cxp2vlx4sb_qs8cx_f32_i32_sme.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_kxn_qsi4c32p_qsu4c32s1s0.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_kxn_qsi4cxp_qs4cxs1s0.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_kxn_qsi8cxp2vlx4sb_qs8cx_f32_i32_sme.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_kxn_qsi8cxp_qsi8cx_neon.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme.h"
+#include "kai/ukernels/matmul/pack/kai_rhs_pack_nxk_f32p2vlx1biasf32_f32_f32_sme.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_nxk_qsi4c32p_qsu4c32s1s0.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_nxk_qsi4cxp_qs4cxs1s0.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_nxk_qsi4cxps1s0_qsu4cxs1s0_neon.h"
 #include "kai/ukernels/matmul/pack/kai_rhs_pack_nxk_qsi8cxp_qsi8cx_neon.h"
-
+#include "kai/ukernels/matmul/pack/kai_rhs_pack_nxk_x16p2vlx2b_x16_x16_sme.h"
+#include "src/xnnpack/allocator.h"
 #endif  // XNN_ENABLE_KLEIDIAI
 
-struct unaligned_int32_t {
-  char value[sizeof(int32_t)];
+class unaligned_int32_t {
+ public:
+  XNN_INLINE unaligned_int32_t(  // NOLINT(google-explicit-constructor)
+      int32_t v) {
+    memcpy(value_, &v, sizeof(v));
+  }
 
-  XNN_INLINE unaligned_int32_t(int32_t v) { memcpy(value, &v, sizeof(v)); }
-
-  XNN_INLINE operator int32_t() const {
+  XNN_INLINE operator int32_t() const {  // NOLINT(google-explicit-constructor)
     int32_t v;
-    memcpy(&v, value, sizeof(v));
+    memcpy(&v, value_, sizeof(v));
     return v;
   }
+
+ private:
+  char value_[sizeof(int32_t)];
 };
 
 template <typename Src, typename Dst>
@@ -501,6 +509,8 @@ void xnn_pack_qs8_qc4w_gemm_goi_w(
   } while (--g != 0);
 }
 
+namespace {
+
 // Packs the weights so as to minimize register usage in kernels.
 // For example:
 // 0 1
@@ -522,7 +532,7 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
     size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
     size_t register_bytes, const uint8_t* k, const int32_t* b,
     const float* scale, void* packed_weights, size_t extra_bytes,
-    const struct xnn_qs8_qc4w_packing_params* params) {
+    uint32_t input_zero_point, uint32_t kernel_zero_point) {
   assert(g != 0);
   assert(nc != 0);
   assert(kc != 0);
@@ -531,12 +541,9 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
   assert(sr >= 1 && sr <= 16);
   assert(k != nullptr);
   assert(packed_weights != nullptr);
-  assert(params != nullptr);
-  assert(params->kernel_zero_point == 8 || params->kernel_zero_point == 0);
+  assert(kernel_zero_point == 8 || kernel_zero_point == 0);
 
   const size_t skr = sr * kr;
-  const uint32_t izp = (uint32_t)params->input_zero_point;
-  const uint32_t kernel_zero_point = (uint32_t)params->kernel_zero_point;
   int row_offset = register_bytes / kr;
   do {
     size_t nr_block_start = 0;
@@ -582,7 +589,8 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
                   }
                 }
                 int8_t kv_hi = kernel_zero_point;
-                if ((nr_block_start + actual_nr_block_offset + row_offset) < nc) {
+                if ((nr_block_start + actual_nr_block_offset + row_offset) <
+                    nc) {
                   if (kc_idx < kc) {
                     kv_hi = ((kh_offset & 1) ? (k[kh_offset >> 1] >> 4)
                                              : (k[kh_offset >> 1] & 0xF));
@@ -604,7 +612,8 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
                   }
                 }
                 uint8_t kv_hi = kernel_zero_point;
-                if ((nr_block_start + actual_nr_block_offset + row_offset) < nc) {
+                if ((nr_block_start + actual_nr_block_offset + row_offset) <
+                    nc) {
                   if (kc_idx < kc) {
                     kv_hi = ((kh_offset & 1) ? (k[kh_offset >> 1] >> 4)
                                              : (k[kh_offset >> 1] & 0xF));
@@ -618,10 +627,11 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
               }
             }
             packed_b[actual_nr_block_offset] =
-                packed_b[actual_nr_block_offset] - ksum_lo * izp * 16;
+                packed_b[actual_nr_block_offset] -
+                ksum_lo * input_zero_point * 16;
             packed_b[actual_nr_block_offset + row_offset] =
                 packed_b[actual_nr_block_offset + row_offset] -
-                ksum_hi * izp * 16;
+                ksum_hi * input_zero_point * 16;
             pw = (uint8_t*)pw + kr;  // kr * 2 nibbles
           }
         }
@@ -639,14 +649,18 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
   } while (--g != 0);
 }
 
+}  // namespace
+
 void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar_scalar(
     size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
     const uint8_t* k, const int32_t* b, const float* scale,
     void* packed_weights, size_t extra_bytes,
     const struct xnn_qs8_qc4w_packing_params* params) {
-  xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(g, nc, kc, nr, kr, sr,
-                                          /*register_bytes=*/1, k, b, scale,
-                                          packed_weights, extra_bytes, params);
+  assert(params != nullptr);
+  xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
+      g, nc, kc, nr, kr, sr,
+      /*register_bytes=*/1, k, b, scale, packed_weights, extra_bytes,
+      params->input_zero_point, params->kernel_zero_point);
 }
 
 void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar_aarch64(
@@ -654,9 +668,11 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar_aarch64(
     const uint8_t* k, const int32_t* b, const float* scale,
     void* packed_weights, size_t extra_bytes,
     const struct xnn_qs8_qc4w_packing_params* params) {
-  xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(g, nc, kc, nr, kr, sr,
-                                          /*register_bytes=*/16, k, b, scale,
-                                          packed_weights, extra_bytes, params);
+  assert(params != nullptr);
+  xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
+      g, nc, kc, nr, kr, sr,
+      /*register_bytes=*/16, k, b, scale, packed_weights, extra_bytes,
+      params->input_zero_point, params->kernel_zero_point);
 }
 
 void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar_avx512(
@@ -664,19 +680,34 @@ void xnn_pack_qs8_qc4w_gemm_goi_w_non_planar_avx512(
     const uint8_t* k, const int32_t* b, const float* scale,
     void* packed_weights, size_t extra_bytes,
     const struct xnn_qs8_qc4w_packing_params* params) {
-  xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(g, nc, kc, nr, kr, sr,
-                                          /*register_bytes=*/64, k, b, scale,
-                                          packed_weights, extra_bytes, params);
+  assert(params != nullptr);
+  xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
+      g, nc, kc, nr, kr, sr,
+      /*register_bytes=*/64, k, b, scale, packed_weights, extra_bytes,
+      params->input_zero_point, params->kernel_zero_point);
+}
+
+void xnn_pack_qs8_to_qu8_qc4w_gemm_goi_w_non_planar_avx512(
+    size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
+    const uint8_t* k, const int32_t* b, const float* scale,
+    void* packed_weights, size_t extra_bytes,
+    const struct xnn_qs8_qc4w_packing_params* params) {
+  assert(params != nullptr);
+  uint32_t input_zero_point = (int32_t)params->input_zero_point + 0x80;
+  xnn_pack_qs8_qc4w_gemm_goi_w_non_planar(
+      g, nc, kc, nr, kr, sr,
+      /*register_bytes=*/64, k, b, scale, packed_weights, extra_bytes,
+      input_zero_point, params->kernel_zero_point);
 }
 
 // Same as qc4w but unsigned 4 bit output
 // Applies kv ^ 0x88 to convert int4 to uint4
 // Does not multiply bias by 16
-void xnn_pack_qs8_qc4uw_gemm_goi_w(
+static void pack_qs8_qc4uw_gemm_goi_w(
     size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
     const uint8_t* k, const int32_t* b, const float* scale,
     void* packed_weights, size_t extra_bytes,
-    const struct xnn_qs8_qc4w_packing_params* params) {
+    uint32_t izp, uint32_t kernel_zero_point) {
   assert(g != 0);
   assert(nc != 0);
   assert(kc != 0);
@@ -685,12 +716,9 @@ void xnn_pack_qs8_qc4uw_gemm_goi_w(
   assert(sr >= 1 && sr <= 16);
   assert(k != nullptr);
   assert(packed_weights != nullptr);
-  assert(params != nullptr);
-  assert(params->kernel_zero_point == 8 || params->kernel_zero_point == 0);
+  assert(kernel_zero_point == 8 || kernel_zero_point == 0);
 
   const size_t skr = sr * kr;
-  const uint32_t izp = (uint32_t)params->input_zero_point;
-  const uint32_t kernel_zero_point = (uint32_t)params->kernel_zero_point;
   do {
     size_t nr_block_start = 0;
     do {
@@ -764,6 +792,32 @@ void xnn_pack_qs8_qc4uw_gemm_goi_w(
       b += nc;
     }
   } while (--g != 0);
+}
+
+// For qd8_qc4w madd
+void xnn_pack_qs8_qc4uw_gemm_goi_w(
+    size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
+    const uint8_t* k, const int32_t* b, const float* scale,
+    void* packed_weights, size_t extra_bytes,
+    const struct xnn_qs8_qc4w_packing_params* params) {
+  assert(params != nullptr);
+  pack_qs8_qc4uw_gemm_goi_w(
+      g, nc, kc, nr, kr, sr,
+      k, b, scale, packed_weights, extra_bytes,
+      params->input_zero_point, params->kernel_zero_point);
+}
+
+// For qs8_qc4w madd
+void xnn_pack_qs8_to_qu8_qc4uw_gemm_goi_w(
+    size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
+    const uint8_t* k, const int32_t* b, const float* scale,
+    void* packed_weights, size_t extra_bytes,
+    const struct xnn_qs8_qc4w_packing_params* params) {
+  assert(params != nullptr);
+  pack_qs8_qc4uw_gemm_goi_w(
+      g, nc, kc, nr, kr, sr,
+      k, b, scale, packed_weights, extra_bytes,
+      params->input_zero_point + 0x80, params->kernel_zero_point);
 }
 
 void xnn_pack_qs8_qb4w_gemm_goi_w(
@@ -1659,26 +1713,27 @@ void xnn_pack_qs8_gemm_gio_w(size_t g, size_t nc, size_t kc, size_t nr,
   } while (--g != 0);
 }
 
-void pack_weights_and_biases(uint32_t flags,                                 //
-                             const struct xnn_gemm_config* gemm_config,      //
-                             size_t input_channels,                          //
-                             size_t output_channels,                         //
-                             size_t groups,                                  //
-                             size_t unused_block_size,                       //
-                             size_t weights_stride,                          //
-                             xnn_packw_gemm_gio_ukernel_fn pack_gemm_gio_w,  //
-                             xnn_packw_gemm_goi_ukernel_fn pack_gemm_goi_w,  //
-                             const void* accumulator_init,                   //
-                             const void* weights,                            //
-                             xnn_init_scale_params_fn init_extra_data0_fn,   //
-                             const void* extra_data0,                        //
-                             size_t extra_data0_element_size,                //
-                             xnn_init_scale_params_fn init_extra_data1_fn,   //
-                             const void* extra_data1,                        //
-                             size_t extra_data1_element_size,                //
-                             void* packed_weights_ptr,                       //
-                             size_t extra_bytes,                             //
-                             const void* params) {
+static void pack_weights_and_biases(
+    uint32_t flags,                                 //
+    const struct xnn_gemm_config* gemm_config,      //
+    size_t input_channels,                          //
+    size_t output_channels,                         //
+    size_t groups,                                  //
+    size_t unused_block_size,                       //
+    size_t weights_stride,                          //
+    xnn_packw_gemm_gio_ukernel_fn pack_gemm_gio_w,  //
+    xnn_packw_gemm_goi_ukernel_fn pack_gemm_goi_w,  //
+    const void* accumulator_init,                   //
+    const void* weights,                            //
+    xnn_init_scale_params_fn init_extra_data0_fn,   //
+    const void* extra_data0,                        //
+    size_t extra_data0_element_size,                //
+    xnn_init_scale_params_fn init_extra_data1_fn,   //
+    const void* extra_data1,                        //
+    size_t extra_data1_element_size,                //
+    void* packed_weights_ptr,                       //
+    size_t extra_bytes,                             //
+    const void* params) {
   const uint32_t nr = gemm_config->nr;
   const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
   const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
@@ -1740,16 +1795,21 @@ size_t xnn_packed_stride_qs8_weights_and_biases(
 void xnn_pack_qs8_weights_and_biases(
     uint32_t flags, const struct xnn_gemm_config* gemm_config,
     size_t input_channels, size_t output_channels, size_t groups,
-    size_t unused_block_size, size_t k_stride, const void* accumulator_init,
-    const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
-    const void* extra_data0, size_t extra_data0_element_size,
+    size_t unused_block_size, size_t unused_k_stride,
+    const void* accumulator_init, const void* weights,
+    xnn_init_scale_params_fn init_extra_data0_fn, const void* extra_data0,
+    size_t extra_data0_element_size,
     xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
     size_t extra_data1_element_size, void* packed_weights_ptr,
     const void* params) {
+  const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
+  const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
+  const size_t packed_k_stride = round_up_po2(input_channels, kr * sr);
   const size_t extra_bytes =
       extra_data0_element_size + extra_data1_element_size;
   const size_t weights_stride = xnn_packed_stride_qs8_weights_and_biases(
-      gemm_config, input_channels, unused_block_size, k_stride, extra_bytes);
+      gemm_config, input_channels, unused_block_size, packed_k_stride,
+      extra_bytes);
   return pack_weights_and_biases(
       flags, gemm_config, input_channels, output_channels, groups,
       unused_block_size, weights_stride,
@@ -1772,12 +1832,18 @@ size_t xnn_packed_stride_qs4_weights_and_biases(
 void xnn_pack_qs4_weights_and_biases(
     uint32_t flags, const struct xnn_gemm_config* gemm_config,
     size_t input_channels, size_t output_channels, size_t groups,
-    size_t unused_block_size, size_t k_stride, const void* accumulator_init,
-    const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
-    const void* extra_data0, size_t extra_data0_element_size,
+    size_t unused_block_size, size_t unused_k_stride,
+    const void* accumulator_init, const void* weights,
+    xnn_init_scale_params_fn init_extra_data0_fn, const void* extra_data0,
+    size_t extra_data0_element_size,
     xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
     size_t extra_data1_element_size, void* packed_weights_ptr,
     const void* params) {
+  const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
+  const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
+  const uint32_t planes = gemm_config->planes;
+  size_t k_stride = round_up_po2(input_channels, kr * sr * planes);
+  k_stride = round_up_po2(k_stride, 2) >> 1;
   const size_t extra_bytes =
       extra_data0_element_size + extra_data1_element_size;
   const size_t weights_stride = xnn_packed_stride_qs8_weights_and_biases(
@@ -1815,7 +1881,7 @@ size_t xnn_packed_stride_qb4_weights_and_biases(
 void xnn_pack_qb4_weights_and_biases(
     uint32_t flags, const struct xnn_gemm_config* gemm_config,
     size_t input_channels, size_t output_channels, size_t groups,
-    size_t block_size, size_t k_stride, const void* accumulator_init,
+    size_t block_size, size_t unused_k_stride, const void* accumulator_init,
     const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
     const void* extra_data0, size_t extra_data0_element_size,
     xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
@@ -1824,6 +1890,9 @@ void xnn_pack_qb4_weights_and_biases(
   const uint32_t nr = gemm_config->nr;
   const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
   const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
+  const uint32_t planes = gemm_config->planes;
+  size_t k_stride = round_up_po2(input_channels, kr * sr * planes);
+  k_stride = round_up_po2(k_stride, 2) >> 1;
 
   const size_t extra_bytes_bl = sizeof(uint16_t);
   const size_t extra_bytes_n = sizeof(uint32_t);
@@ -1845,7 +1914,14 @@ void xnn_pack_qb4_weights_and_biases(
         /*extra_bytes_n=*/nr * extra_bytes_n,
         /*params*/ (const struct xnn_qs8_qc4w_packing_params*)params);
   } else {
-    xnn_pack_qs8_qb4w_gemm_goi_w(
+    bool has_fast_packing_ukernel = gemm_config->pack_gemm_goi_bl != nullptr;
+    xnn_packw_gemm_goi_bl_ukernel_fn pack_gemm_goi =
+        has_fast_packing_ukernel
+            ? (xnn_packw_gemm_goi_bl_ukernel_fn)gemm_config->pack_gemm_goi_bl
+            : (xnn_packw_gemm_goi_bl_ukernel_fn)xnn_pack_qs8_qb4w_gemm_goi_w;
+    // Fast Packing ukernel initializes scales and bias, so we pass in
+    // bias to packing fn if we use the fast packing ukernel, nullptr otherwise
+    pack_gemm_goi(
         /*g=*/groups,
         /*nc=*/output_channels,
         /*kc=*/input_channels,
@@ -1854,12 +1930,17 @@ void xnn_pack_qb4_weights_and_biases(
         /*sr=*/sr,
         /*bl=*/block_size,
         /*kernel=*/(const uint8_t*)weights,
-        /*bias=*/nullptr,
+        /*bias=*/
+        has_fast_packing_ukernel ? (const int32_t*)accumulator_init : nullptr,
         /*scale=*/(const xnn_bfloat16*)extra_data1,
         /*packed_weights=*/packed_weights_ptr,
         /*extra_bytes_bl=*/nr * extra_bytes_bl,
         /*extra_bytes_n=*/nr * extra_bytes_n,
         /*params*/ (const struct xnn_qs8_qc4w_packing_params*)params);
+    if (has_fast_packing_ukernel) {
+      // Fast Packing UKernel initializes scales and bias, so can early exit
+      return;
+    }
   }
 
   // fill in kernel scales
@@ -1899,16 +1980,21 @@ size_t xnn_packed_stride_qu8_weights_and_biases(
 void xnn_pack_qu8_weights_and_biases(
     uint32_t flags, const struct xnn_gemm_config* gemm_config,
     size_t input_channels, size_t output_channels, size_t groups,
-    size_t unused_block_size, size_t k_stride, const void* accumulator_init,
-    const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
-    const void* extra_data0, size_t extra_data0_element_size,
+    size_t unused_block_size, size_t unused_k_stride,
+    const void* accumulator_init, const void* weights,
+    xnn_init_scale_params_fn init_extra_data0_fn, const void* extra_data0,
+    size_t extra_data0_element_size,
     xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
     size_t extra_data1_element_size, void* packed_weights_ptr,
     const void* params) {
+  const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
+  const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
+  const size_t packed_k_stride = round_up_po2(input_channels, kr * sr);
   const size_t extra_bytes =
       extra_data0_element_size + extra_data1_element_size;
   const size_t weights_stride = xnn_packed_stride_qs8_weights_and_biases(
-      gemm_config, input_channels, unused_block_size, k_stride, extra_bytes);
+      gemm_config, input_channels, unused_block_size, packed_k_stride,
+      extra_bytes);
   return pack_weights_and_biases(
       flags, gemm_config, input_channels, output_channels, groups,
       unused_block_size, weights_stride,
@@ -1922,24 +2008,20 @@ void xnn_pack_qu8_weights_and_biases(
 #if XNN_ENABLE_KLEIDIAI
 size_t xnn_packed_stride_kai_qs4_weights_and_biases_sme(
     const struct xnn_gemm_config* gemm_config, size_t k, size_t unused_k_stride,
-    size_t unused_block_size,  //
-    size_t extra_bytes) {
-  const uint32_t nr = gemm_config->nr;
-  const uint32_t kr = gemm_config->nr;
-  const uint32_t sr = gemm_config->nr;
-  size_t ret_val =
-      kai_get_rhs_packed_stride_rhs_pack_nxk_qsi4cxps1s0_qsu4cxs1s0_neon(
-          k, nr, kr, sr) /
-      kai_get_n_step_rhs_pack_nxk_qsi4cxps1s0_qsu4cxs1s0_neon(nr);
-  return ret_val;
+    size_t unused_block_size, size_t extra_bytes) {
+  const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
+  const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
+  return kai_get_rhs_packed_stride_rhs_pack_nxk_qsi4cxps1s0_qsu4cxs1s0_neon(
+      k, /*nr=*/1, kr, sr);
 }
 
 void xnn_pack_kai_qs4_weights_and_biases_sme(
     uint32_t flags, const struct xnn_gemm_config* gemm_config,
     size_t input_channels, size_t output_channels, size_t groups,
-    size_t unused_block_size, size_t k_stride, const void* accumulator_init,
-    const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
-    const void* extra_data0, size_t extra_data0_element_size,
+    size_t unused_block_size, size_t unused_k_stride,
+    const void* accumulator_init, const void* weights,
+    xnn_init_scale_params_fn init_extra_data0_fn, const void* extra_data0,
+    size_t extra_data0_element_size,
     xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
     size_t extra_data1_element_size, void* packed_weights_ptr,
     const void* params) {
@@ -2023,7 +2105,6 @@ void xnn_pack_kai_qs4_weights_and_biases(
   }
 }
 
-#if XNN_ENABLE_KLEIDIAI
 size_t xnn_packed_stride_kai_qs8_qc8w_weights_and_biases_sme2(
     const struct xnn_gemm_config* gemm_config, size_t k,
     size_t unused_block_size, size_t unused_k_stride, size_t extra_bytes) {
@@ -2074,7 +2155,7 @@ void xnn_pack_kai_qs8_qc8w_weights_and_biases_sme2(
         groups, output_channels, input_channels, nr, kr, sr, rhs_stride,
         /*rhs=*/weights,
         /*bias=*/accumulator_init,
-        /*scale=*/extra_data1,
+        /*scale=*/extra_data0,
         /*rhs_packed=*/packed_weights_ptr,
         /*extra_bytes=*/0, &kai_params);
   } else {
@@ -2096,25 +2177,6 @@ void xnn_pack_kai_qs8_qc8w_weights_and_biases_sme2(
     free((void*)accumulator_init);
   }
 }
-#endif  // XNN_ENABLE_KLEIDIAI
-
-size_t xnn_packed_stride_kai_f16_weights_and_biases(
-    const struct xnn_gemm_config* gemm_config, size_t k,
-    size_t unused_block_size, size_t unused_k_stride, size_t extra_bytes) {
-  size_t ret_val =
-      kai_get_rhs_packed_stride_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme(k) /
-      kai_get_n_step_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme();
-  return ret_val;
-}
-
-void transpose_weights_x16(const xnn_float16* in, xnn_float16* out,
-                           size_t height, size_t width) {
-  for (size_t i = 0; i < height; ++i) {
-    for (size_t j = 0; j < width; ++j) {
-      out[j * height + i] = in[i * width + j];
-    }
-  }
-}
 
 size_t xnn_packed_stride_kai_qs8_weights_and_biases(
     const struct xnn_gemm_config* gemm_config, size_t k,
@@ -2128,9 +2190,10 @@ size_t xnn_packed_stride_kai_qs8_weights_and_biases(
 void xnn_pack_kai_qs8_weights_and_biases(
     uint32_t flags, const struct xnn_gemm_config* gemm_config,
     size_t input_channels, size_t output_channels, size_t groups,
-    size_t unused_block_size, size_t k_stride, const void* accumulator_init,
-    const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
-    const void* extra_data0, size_t extra_data0_element_size,
+    size_t unused_block_size, size_t unused_k_stride,
+    const void* accumulator_init, const void* weights,
+    xnn_init_scale_params_fn init_extra_data0_fn, const void* extra_data0,
+    size_t extra_data0_element_size,
     xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
     size_t extra_data1_element_size, void* packed_weights_ptr,
     const void* params) {
@@ -2150,7 +2213,8 @@ void xnn_pack_kai_qs8_weights_and_biases(
   const size_t n_stride = round_up(output_channels, nr);
   const size_t packed_weights_group_stride =
       n_stride * xnn_packed_stride_kai_qs8_weights_and_biases(
-                     gemm_config, input_channels, unused_block_size, k_stride,
+                     gemm_config, input_channels, unused_block_size,
+                     /*unused_k_stride=*/0,
                      extra_data0_element_size + extra_data1_element_size);
 
   if (flags & XNN_FLAG_TRANSPOSE_WEIGHTS) {
@@ -2196,12 +2260,13 @@ void xnn_pack_kai_qs8_weights_and_biases(
   }
 }
 
-size_t xnn_packed_stride_kai_f32_weights_and_biases(
-    const struct xnn_gemm_config* gemm_config, size_t k,
-    size_t unused_block_size, size_t unused_k_stride, size_t extra_bytes) {
+size_t xnn_packed_stride_kai_f16_weights_and_biases(
+    const struct xnn_gemm_config* unused_gemm_config, size_t k,
+    size_t unused_block_size, size_t unused_k_stride,
+    size_t unused_extra_bytes) {
   size_t ret_val =
-      kai_get_rhs_packed_stride_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme(k) /
-      kai_get_n_step_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme();
+      kai_get_rhs_packed_stride_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme(k) /
+      kai_get_n_step_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme();
   return ret_val;
 }
 
@@ -2219,7 +2284,6 @@ void xnn_pack_kai_f16_weights_and_biases(
   const uint32_t nr = gemm_config->nr;
   const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
   const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
-  const size_t rhs_stride = output_channels * sizeof(xnn_float16);
 
   // Some packing kernels assume that the bias is non-null. Allocate a zero
   // initialized array as a workaround if bias is null.
@@ -2228,43 +2292,62 @@ void xnn_pack_kai_f16_weights_and_biases(
     accumulator_init = calloc(output_channels, sizeof(xnn_float16));
     free_accumulator_init = true;
   }
+
+  const size_t rhs_stride = k_stride * sizeof(xnn_float16);
+  const size_t weights_group_stride =
+      sizeof(xnn_float16) * input_channels * output_channels;
+  const size_t n_stride = round_up(output_channels, nr);
+  const size_t packed_weights_group_stride =
+      n_stride * xnn_packed_stride_kai_f16_weights_and_biases(
+                     gemm_config, input_channels, unused_block_size,
+                     /*unused_k_stride=*/0,
+                     /*unused_extra_bytes=*/0);
+
   if (flags & XNN_FLAG_TRANSPOSE_WEIGHTS) {
-    kai_run_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme(
-        groups, output_channels, input_channels, nr, kr, sr, rhs_stride,
-        /*rhs=*/weights,
-        /*bias=*/accumulator_init,
-        /*scale=*/extra_data1,
-        /*rhs_packed=*/packed_weights_ptr,
-        /*extra_bytes=*/extra_data0_element_size + extra_data1_element_size,
-        NULL);
+    for (size_t group = 0; group < groups; group++) {
+      kai_run_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme(
+          /*groups=*/1, output_channels, input_channels, nr, kr, sr, rhs_stride,
+          /*rhs=*/
+          (const void*)((uintptr_t)weights + group * weights_group_stride),
+          /*bias=*/
+          free_accumulator_init
+              ? accumulator_init
+              : (const float*)(accumulator_init) + group * output_channels,
+          /*scale=*/NULL,
+          /*rhs_packed=*/
+          (void*)((uintptr_t)packed_weights_ptr +
+                  group * packed_weights_group_stride),
+          /*extra_bytes=*/0, /*params=*/NULL);
+    }
   } else {
-    // Transpose the weights until the transpose packing function is ready.
-    xnn_float16* tmp_data = (xnn_float16*)malloc(
-        input_channels * output_channels * sizeof(xnn_float16));
-    transpose_weights_x16((const xnn_float16*)weights, tmp_data,
-                          output_channels, input_channels);
-    kai_run_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme(
-        groups, output_channels, input_channels, nr, kr, sr, rhs_stride,
-        /*rhs=*/tmp_data,
-        /*bias=*/accumulator_init,
-        /*scale=*/extra_data1,
-        /*rhs_packed=*/packed_weights_ptr,
-        /*extra_bytes=*/extra_data0_element_size + extra_data1_element_size,
-        NULL);
-    free(tmp_data);
+    for (size_t group = 0; group < groups; group++) {
+      kai_run_rhs_pack_nxk_x16p2vlx2b_x16_x16_sme(
+          /*groups=*/1, output_channels, input_channels, nr, kr, sr, rhs_stride,
+          /*rhs=*/
+          (const void*)((uintptr_t)weights + group * weights_group_stride),
+          /*bias=*/
+          free_accumulator_init
+              ? accumulator_init
+              : (const float*)(accumulator_init) + group * output_channels,
+          /*scale=*/NULL,
+          /*rhs_packed=*/
+          (void*)((uintptr_t)packed_weights_ptr +
+                  group * packed_weights_group_stride),
+          /*extra_bytes=*/0, /*params=*/NULL);
+    }
   }
   if (free_accumulator_init) {
     free((void*)accumulator_init);
   }
 }
 
-void transpose_weights(const float* in, float* out, size_t height,
-                       size_t width) {
-  for (size_t i = 0; i < height; ++i) {
-    for (size_t j = 0; j < width; ++j) {
-      out[j * height + i] = in[i * width + j];
-    }
-  }
+size_t xnn_packed_stride_kai_f32_weights_and_biases(
+    const struct xnn_gemm_config* gemm_config, size_t k,
+    size_t unused_block_size, size_t unused_k_stride, size_t extra_bytes) {
+  size_t ret_val =
+      kai_get_rhs_packed_stride_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme(k) /
+      kai_get_n_step_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme();
+  return ret_val;
 }
 
 void xnn_pack_kai_f32_weights_and_biases(
@@ -2281,7 +2364,6 @@ void xnn_pack_kai_f32_weights_and_biases(
   const uint32_t nr = gemm_config->nr;
   const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
   const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
-  const size_t rhs_stride = output_channels * sizeof(float);
 
   // Some packing kernels assume that the bias is non-null. Allocate a zero
   // initialized array as a workaround if bias is null.
@@ -2290,30 +2372,49 @@ void xnn_pack_kai_f32_weights_and_biases(
     accumulator_init = calloc(output_channels, sizeof(float));
     free_accumulator_init = true;
   }
+
+  const size_t rhs_stride = k_stride * sizeof(float);
+  const size_t weights_group_stride =
+      sizeof(float) * input_channels * output_channels;
+  const size_t n_stride = round_up(output_channels, nr);
+  const size_t packed_weights_group_stride =
+      n_stride * xnn_packed_stride_kai_f32_weights_and_biases(
+                     gemm_config, input_channels, unused_block_size,
+                     /*unused_k_stride=*/0,
+                     /*unused_extra_bytes=*/0);
+
   if (flags & XNN_FLAG_TRANSPOSE_WEIGHTS) {
-    kai_run_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme(
-        groups, output_channels, input_channels, nr, kr, sr, rhs_stride,
-        /*rhs=*/reinterpret_cast<const uint8_t*>(weights),
-        /*bias=*/reinterpret_cast<const float*>(accumulator_init),
-        /*scale=*/reinterpret_cast<const float*>(extra_data1),
-        /*rhs_packed=*/packed_weights_ptr,
-        /*extra_bytes=*/extra_data0_element_size + extra_data1_element_size,
-        NULL);
+    for (size_t group = 0; group < groups; group++) {
+      kai_run_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme(
+          /*groups=*/1, output_channels, input_channels, nr, kr, sr, rhs_stride,
+          /*rhs=*/
+          (const void*)((uintptr_t)weights + group * weights_group_stride),
+          /*bias=*/
+          free_accumulator_init
+              ? accumulator_init
+              : (const float*)(accumulator_init) + group * output_channels,
+          /*scale=*/NULL,
+          /*rhs_packed=*/
+          (void*)((uintptr_t)packed_weights_ptr +
+                  group * packed_weights_group_stride),
+          /*extra_bytes=*/0, /*params=*/NULL);
+    }
   } else {
-    // Transpose the weights until the transpose packing function is ready.
-    float* tmp_data =
-        (float*)malloc(input_channels * output_channels * sizeof(float));
-    transpose_weights((const float*)weights, tmp_data, output_channels,
-                      input_channels);
-    kai_run_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme(
-        groups, output_channels, input_channels, nr, kr, sr, rhs_stride,
-        /*rhs=*/reinterpret_cast<const uint8_t*>(tmp_data),
-        /*bias=*/reinterpret_cast<const float*>(accumulator_init),
-        /*scale=*/reinterpret_cast<const float*>(extra_data1),
-        /*rhs_packed=*/packed_weights_ptr,
-        /*extra_bytes=*/extra_data0_element_size + extra_data1_element_size,
-        NULL);
-    free(tmp_data);
+    for (size_t group = 0; group < groups; group++) {
+      kai_run_rhs_pack_nxk_f32p2vlx1biasf32_f32_f32_sme(
+          /*groups=*/1, output_channels, input_channels, nr, kr, sr, rhs_stride,
+          /*rhs=*/
+          (const void*)((uintptr_t)weights + group * weights_group_stride),
+          /*bias=*/
+          free_accumulator_init
+              ? accumulator_init
+              : (const float*)(accumulator_init) + group * output_channels,
+          /*scale=*/NULL,
+          /*rhs_packed=*/
+          (void*)((uintptr_t)packed_weights_ptr +
+                  group * packed_weights_group_stride),
+          /*extra_bytes=*/0, /*params=*/NULL);
+    }
   }
   if (free_accumulator_init) {
     free((void*)accumulator_init);
@@ -2340,7 +2441,7 @@ size_t xnn_packed_stride_kai_qb4_weights_and_biases(
 void xnn_pack_kai_qb4_weights_and_biases(
     uint32_t flags, const struct xnn_gemm_config* gemm_config,
     size_t input_channels, size_t output_channels, size_t groups,
-    size_t block_size, size_t unused_k_stride, const void* accumulator_init,
+    size_t block_size, size_t k_stride, const void* accumulator_init,
     const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
     const void* extra_data0, size_t extra_data0_element_size,
     xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
@@ -2349,21 +2450,22 @@ void xnn_pack_kai_qb4_weights_and_biases(
   const uint32_t nr = gemm_config->nr;
   const uint32_t kr = UINT32_C(1) << gemm_config->log2_kr;
   const uint32_t sr = UINT32_C(1) << gemm_config->log2_sr;
+  const uint32_t planes = gemm_config->planes;
   const struct xnn_qs8_qc4w_packing_params* xnn_params =
       reinterpret_cast<const struct xnn_qs8_qc4w_packing_params*>(params);
+
+  size_t rhs_stride = (k_stride + 1) / 2;
+  size_t blocks_per_row = (input_channels + block_size - 1) / block_size;
 
   if (flags & XNN_FLAG_TRANSPOSE_WEIGHTS) {
     struct kai_rhs_pack_kxn_qsi4c32p_qsu4c32s1s0_params kai_params;
     kai_params.lhs_zero_point = xnn_params->input_zero_point;
     kai_params.rhs_zero_point = xnn_params->kernel_zero_point;
     kai_params.scale_dt = kai_datatype::kai_dt_bf16;
-    size_t rhs_stride = (output_channels + 1) / 2;
-    size_t blocks_per_row = (input_channels + block_size - 1) / block_size;
     kai_run_rhs_pack_kxn_qsi4c32p_qsu4c32s1s0(
         groups, output_channels, input_channels, nr, kr, sr,
         /*bl=*/block_size,
-        /*rhs=*/reinterpret_cast<const uint8_t*>(weights),
-        /*rhs_stride=*/rhs_stride,
+        /*rhs=*/reinterpret_cast<const uint8_t*>(weights), rhs_stride,
         /*bias=*/reinterpret_cast<const float*>(extra_data0),
         /*scale=*/reinterpret_cast<const uint16_t*>(extra_data1),
         /*scale_stride=*/blocks_per_row * sizeof(uint16_t),
@@ -2375,13 +2477,10 @@ void xnn_pack_kai_qb4_weights_and_biases(
     kai_params.lhs_zero_point = xnn_params->input_zero_point;
     kai_params.rhs_zero_point = xnn_params->kernel_zero_point;
     kai_params.scale_dt = kai_datatype::kai_dt_bf16;
-    size_t rhs_stride = (input_channels + 1) / 2;
-    size_t blocks_per_row = (input_channels + block_size - 1) / block_size;
     kai_run_rhs_pack_nxk_qsi4c32p_qsu4c32s1s0(
         groups, output_channels, input_channels, nr, kr, sr,
         /*bl=*/block_size,
-        /*rhs=*/reinterpret_cast<const uint8_t*>(weights),
-        /*rhs_stride=*/rhs_stride,
+        /*rhs=*/reinterpret_cast<const uint8_t*>(weights), rhs_stride,
         /*bias=*/reinterpret_cast<const float*>(extra_data0),
         /*scale=*/reinterpret_cast<const uint16_t*>(extra_data1),
         /*scale_stride=*/blocks_per_row * sizeof(uint16_t),
@@ -2390,8 +2489,14 @@ void xnn_pack_kai_qb4_weights_and_biases(
   }
 
   // init bias
+  size_t packed_k_stride = round_up_po2(input_channels, kr * sr);
+  if (1 < planes) {
+    input_channels = round_up_po2(input_channels, planes);
+    packed_k_stride = round_up_po2(input_channels, kr * sr * planes);
+    packed_k_stride = round_up_po2(packed_k_stride, 2) >> 1;
+  }
   const size_t weights_stride = xnn_packed_stride_kai_qb4_weights_and_biases(
-      gemm_config, input_channels, block_size, unused_k_stride, 0);
+      gemm_config, input_channels, block_size, packed_k_stride, 0);
   if (accumulator_init != NULL) {
     void* weights_start =
         (void*)((uintptr_t)packed_weights_ptr +
@@ -2401,6 +2506,56 @@ void xnn_pack_kai_qb4_weights_and_biases(
     xnn_init_qs8_qc8w_scale_fp32_params(
         output_channels, nr, nr * weights_stride,
         (const float*)accumulator_init, weights_start);
+  }
+}
+
+void xnn_pack_kai_qs8_conv_goki_w_sme2(
+    size_t g, size_t nc, size_t ks, size_t kc, size_t nr, size_t kr, size_t sr,
+    const int8_t* k, const int32_t* b, const float* scale, void* packed_weights,
+    size_t extra_bytes, const struct xnn_qs8_packing_params* params) {
+  assert(g != 0);
+  assert(nr >= sr);
+  assert(k != nullptr);
+  assert(packed_weights != nullptr);
+
+  kai_rhs_pack_qsi8cx_params kai_params{};
+  kai_params.lhs_zero_point = params->input_zero_point;
+  kai_params.scale_multiplier = 1.0F;
+
+  int32_t* tmp_bias = NULL;
+
+  if (b == NULL) {
+    tmp_bias = (int32_t*)xnn_allocate_zero_memory(g * nc * sizeof(int32_t));
+    b = tmp_bias;
+  }
+
+  int8_t* tmp_data =
+      (int8_t*)xnn_allocate_memory(nc * ks * kc * sizeof(int8_t));
+  const size_t rhs_row_stride = nc * sizeof(int8_t);
+  const size_t packed_rhs_size =
+      kai_get_rhs_packed_size_rhs_imatmul_pack_kxn_qsi8cxp2vlx4sb_qs8cx_f32_i32_sme(
+          nc, ks, kc);
+
+  for (size_t g_idx = 0; g_idx < g; ++g_idx) {
+    transpose_weights_x8(k, tmp_data, nc, ks * kc);
+    kai_run_rhs_imatmul_pack_kxn_qsi8cxp2vlx4sb_qs8cx_f32_i32_sme(
+        nc, ks, kc, rhs_row_stride, tmp_data, b, scale, packed_weights,
+        &kai_params);
+
+    k += nc * ks * kc;
+    b += nc;
+
+    if (scale != NULL) {
+      scale += nc;
+    }
+
+    packed_weights = (uint8_t*)packed_weights + packed_rhs_size;
+  }
+
+  xnn_release_memory(tmp_data);
+
+  if (tmp_bias != NULL) {
+    xnn_release_memory(tmp_bias);
   }
 }
 #endif  // XNN_ENABLE_KLEIDIAI
@@ -2787,7 +2942,7 @@ void xnn_pack_f32_conv_kgo_w(size_t g, size_t nc, size_t ks, size_t nr,
       for (size_t ki = 0; ki < ks; ki++) {
         for (size_t sr_block_offset = 0; sr_block_offset < sr;
              sr_block_offset++) {
-          // TODO: Is there a more precise zeroing we could do here?
+          // TODO(unassigned): Is there a more precise zeroing we could do here?
           std::fill_n(packed_weights, nr * kr, 0.0f);
           for (size_t nr_block_offset = (-sr_block_offset) & (sr - 1);
                nr_block_offset < nr_block_size; nr_block_offset += sr) {
@@ -2825,7 +2980,7 @@ void xnn_pack_f16_conv_kgo_w(size_t g, size_t nc, size_t ks, size_t nr,
       for (size_t ki = 0; ki < ks; ki++) {
         for (size_t sr_block_offset = 0; sr_block_offset < sr;
              sr_block_offset++) {
-          // TODO: Is there a more precise zeroing we could do here?
+          // TODO(unassigned): Is there a more precise zeroing we could do here?
           std::fill_n(packed_weights, nr * kr, UINT16_C(0));
           for (size_t nr_block_offset = (-sr_block_offset) & (sr - 1);
                nr_block_offset < nr_block_size; nr_block_offset += sr) {
@@ -2863,7 +3018,7 @@ void xnn_pack_f32_to_f16_conv_kgo_w(size_t g, size_t nc, size_t ks, size_t nr,
       for (size_t ki = 0; ki < ks; ki++) {
         for (size_t sr_block_offset = 0; sr_block_offset < sr;
              sr_block_offset++) {
-          // TODO: Is there a more precise zeroing we could do here?
+          // TODO(unassigned): Is there a more precise zeroing we could do here?
           std::fill_n(packed_weights, nr * kr, static_cast<xnn_float16>(0.0f));
           for (size_t nr_block_offset = (-sr_block_offset) & (sr - 1);
                nr_block_offset < nr_block_size; nr_block_offset += sr) {
@@ -2905,7 +3060,7 @@ void xnn_pack_qu8_conv_kgo_w(size_t g, size_t nc, size_t ks, size_t nr,
       for (size_t ki = 0; ki < ks; ki++) {
         for (size_t sr_block_offset = 0; sr_block_offset < sr;
              sr_block_offset++) {
-          // TODO: Is there a more precise zeroing we could do here?
+          // TODO(unassigned): Is there a more precise zeroing we could do here?
           std::fill_n((uint8_t*)packed_weights, nr * kr,
                       params->kernel_zero_point);
           for (size_t nr_block_offset = (-sr_block_offset) & (sr - 1);
@@ -2951,7 +3106,7 @@ void pack_qs8_conv_kgo_w(size_t g, size_t nc, size_t ks, size_t nr, size_t kr,
       for (size_t ki = 0; ki < ks; ki++) {
         for (size_t sr_block_offset = 0; sr_block_offset < sr;
              sr_block_offset++) {
-          // TODO: Is there a more precise zeroing we could do here?
+          // TODO(unassigned): Is there a more precise zeroing we could do here?
           std::fill_n((int8_t*)packed_weights, nr * kr, INT8_C(0));
           for (size_t nr_block_offset = (-sr_block_offset) & (sr - 1);
                nr_block_offset < nr_block_size; nr_block_offset += sr) {
@@ -3813,82 +3968,6 @@ void xnn_pack_qs8_dwconv_hwg_w(size_t primary_tile, size_t h, size_t w,
     // We need to pack extra bytes for scale values here.
     packed_weights = (void*)((uintptr_t)packed_weights + per_tile_extra_bytes);
   }
-}
-
-void xnn_pack_f32_gemminc_goi_w(size_t g, size_t nc, size_t kc, size_t nr,
-                                size_t kr, size_t sr, const float* k,
-                                float* packed_weights, const void* params) {
-  assert(g != 0);
-  assert(nr >= sr);
-  assert(k != nullptr);
-  assert(packed_weights != nullptr);
-
-  const size_t skr = sr * kr;
-  do {
-    for (size_t nr_block_start = 0; nr_block_start < nc; nr_block_start += nr) {
-      const size_t nr_block_size = min(nc - nr_block_start, nr);
-
-      for (size_t kr_block_start = 0; kr_block_start < round_up_po2(kc, skr);
-           kr_block_start += kr) {
-        for (size_t nr_block_offset = 0; nr_block_offset < nr_block_size;
-             nr_block_offset++) {
-          for (size_t kr_block_offset = 0; kr_block_offset < kr;
-               kr_block_offset++) {
-            const size_t kc_begin =
-                round_down_po2(kr_block_start, skr) +
-                ((kr_block_start + nr_block_offset * kr) & (skr - 1));
-            const size_t kc_end = std::min(kc, kc_begin + kr);
-            if (kc_begin < kc_end) {
-              std::copy_n(
-                  &k[(nr_block_start + nr_block_offset) * kc + kc_begin],
-                  kc_end - kc_begin, packed_weights);
-            }
-          }
-          packed_weights += kr;
-        }
-        packed_weights += (nr - nr_block_size) * kr;
-      }
-    }
-    k += nc * kc;
-  } while (--g != 0);
-}
-
-void xnn_pack_f16_gemminc_goi_w(size_t g, size_t nc, size_t kc, size_t nr,
-                                size_t kr, size_t sr, const uint16_t* k,
-                                uint16_t* packed_weights, const void* params) {
-  assert(g != 0);
-  assert(nr >= sr);
-  assert(k != nullptr);
-  assert(packed_weights != nullptr);
-
-  const size_t skr = sr * kr;
-  do {
-    for (size_t nr_block_start = 0; nr_block_start < nc; nr_block_start += nr) {
-      const size_t nr_block_size = min(nc - nr_block_start, nr);
-
-      for (size_t kr_block_start = 0; kr_block_start < round_up_po2(kc, skr);
-           kr_block_start += kr) {
-        for (size_t nr_block_offset = 0; nr_block_offset < nr_block_size;
-             nr_block_offset++) {
-          for (size_t kr_block_offset = 0; kr_block_offset < kr;
-               kr_block_offset++) {
-            const size_t kc_begin =
-                round_down_po2(kr_block_start, skr) +
-                ((kr_block_start + nr_block_offset * kr) & (skr - 1));
-            const size_t kc_end = std::min(kc, kc_begin + kr);
-            if (kc_begin < kc_end) {
-              std::copy_n(
-                  &k[(nr_block_start + nr_block_offset) * kc + kc_begin],
-                  kc_end - kc_begin, packed_weights);
-            }
-          }
-          packed_weights += kr;
-        }
-        packed_weights += (nr - nr_block_size) * kr;
-      }
-    }
-    k += nc * kc;
-  } while (--g != 0);
 }
 
 void xnn_pack_f32_dconv_oki_w(size_t nc, size_t kc, size_t nr, size_t kh,

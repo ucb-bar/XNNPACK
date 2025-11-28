@@ -4,8 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-#ifndef __XNNPACK_SRC_XNNPACK_SIMD_F32_WASMSIMD_BASE_H_
-#define __XNNPACK_SRC_XNNPACK_SIMD_F32_WASMSIMD_BASE_H_
+#ifndef XNNPACK_SRC_XNNPACK_SIMD_F32_WASMSIMD_BASE_H_
+#define XNNPACK_SRC_XNNPACK_SIMD_F32_WASMSIMD_BASE_H_
 
 #include <assert.h>
 #include <stddef.h>
@@ -66,6 +66,24 @@ static XNN_INLINE xnn_simd_f32_t xnn_round_f32(xnn_simd_f32_t a) {
   return wasm_f32x4_nearest(a);
 }
 
+static XNN_INLINE float xnn_reduce_add_f32(xnn_simd_f32_t a) {
+  a = wasm_f32x4_add(a, wasm_v64x2_shuffle(a, a, 1, 1));
+  a = wasm_f32x4_add(a, wasm_v32x4_shuffle(a, a, 1, 1, 1, 1));
+  return wasm_f32x4_extract_lane(a, 0);
+}
+
+static XNN_INLINE float xnn_reduce_min_f32(xnn_simd_f32_t a) {
+  a = wasm_f32x4_min(a, wasm_v64x2_shuffle(a, a, 1, 1));
+  a = wasm_f32x4_min(a, wasm_v32x4_shuffle(a, a, 1, 1, 1, 1));
+  return wasm_f32x4_extract_lane(a, 0);
+}
+
+static XNN_INLINE float xnn_reduce_max_f32(xnn_simd_f32_t a) {
+  a = wasm_f32x4_max(a, wasm_v64x2_shuffle(a, a, 1, 1));
+  a = wasm_f32x4_max(a, wasm_v32x4_shuffle(a, a, 1, 1, 1, 1));
+  return wasm_f32x4_extract_lane(a, 0);
+}
+
 // Logical operations.
 static XNN_INLINE xnn_simd_f32_t xnn_and_f32(xnn_simd_f32_t a,
                                              xnn_simd_f32_t b) {
@@ -80,6 +98,11 @@ static XNN_INLINE xnn_simd_f32_t xnn_or_f32(xnn_simd_f32_t a,
 static XNN_INLINE xnn_simd_f32_t xnn_xor_f32(xnn_simd_f32_t a,
                                              xnn_simd_f32_t b) {
   return wasm_v128_xor(a, b);
+}
+
+static XNN_INLINE xnn_simd_f32_t xnn_andnot_f32(xnn_simd_f32_t a,
+                                                xnn_simd_f32_t b) {
+  return wasm_v128_andnot(b, a);
 }
 
 static XNN_INLINE xnn_simd_f32_t xnn_sll_f32(xnn_simd_f32_t a, uint8_t bits) {
@@ -99,9 +122,18 @@ static XNN_INLINE xnn_simd_f32_t xnn_cmpeq_f32(xnn_simd_f32_t a,
   return wasm_f32x4_eq(a, b);
 }
 
+static XNN_INLINE xnn_simd_f32_t xnn_cmpneq_f32(xnn_simd_f32_t a,
+                                                xnn_simd_f32_t b) {
+  return wasm_f32x4_ne(a, b);
+}
+
 // Special functions.
 #define XNN_SIMD_HAVE_RCP_F32 0
 #define XNN_SIMD_HAVE_RSQRT_F32 0
+
+static XNN_INLINE xnn_simd_f32_t xnn_sqrt_f32(xnn_simd_f32_t a) {
+  return wasm_f32x4_sqrt(a);
+}
 
 // Load/store operations.
 static XNN_INLINE xnn_simd_f32_t xnn_loadu_f32(const float* ptr) {
@@ -137,7 +169,7 @@ static XNN_INLINE xnn_simd_f32_t xnn_load_tail_safe_f32(const float* input,
   assert(num_elements > 0);
   assert(num_elements < xnn_simd_size_f32);
 
-  XNN_ALIGN(16) float padded[4];
+  XNN_ALIGN(16) float padded[4] = {0.0f};
   float* dst = padded;
   switch (num_elements) {
     case 3:
@@ -165,4 +197,4 @@ static XNN_INLINE void xnn_store_tail_f32(float* output, xnn_simd_f32_t v,
   }
 }
 
-#endif  // __XNNPACK_SRC_XNNPACK_SIMD_F32_WASMSIMD_BASE_H_
+#endif  // XNNPACK_SRC_XNNPACK_SIMD_F32_WASMSIMD_BASE_H_

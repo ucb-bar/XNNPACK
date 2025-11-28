@@ -17,8 +17,8 @@
 //   - xnn_sll_f32
 //   - xnn_srl_f32
 
-#ifndef __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_BASE_H_
-#define __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_BASE_H_
+#ifndef XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_BASE_H_
+#define XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_BASE_H_
 
 #include <assert.h>
 #include <immintrin.h>
@@ -88,6 +88,27 @@ static XNN_INLINE xnn_simd_f32_t xnn_round_f32(xnn_simd_f32_t a) {
   return _mm256_round_ps(a, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
 }
 
+static XNN_INLINE float xnn_reduce_add_f32(xnn_simd_f32_t a) {
+  __m128 a128 = _mm_add_ps(_mm256_castps256_ps128(a), _mm256_extractf128_ps(a, 1));
+  a128 = _mm_add_ps(a128, _mm_movehl_ps(a128, a128));
+  a128 = _mm_add_ss(a128, _mm_movehdup_ps(a128));
+  return _mm_cvtss_f32(a128);
+}
+
+static XNN_INLINE float xnn_reduce_min_f32(xnn_simd_f32_t a) {
+  __m128 a128 = _mm_min_ps(_mm256_castps256_ps128(a), _mm256_extractf128_ps(a, 1));
+  a128 = _mm_min_ps(a128, _mm_movehl_ps(a128, a128));
+  a128 = _mm_min_ss(a128, _mm_movehdup_ps(a128));
+  return _mm_cvtss_f32(a128);
+}
+
+static XNN_INLINE float xnn_reduce_max_f32(xnn_simd_f32_t a) {
+  __m128 a128 = _mm_max_ps(_mm256_castps256_ps128(a), _mm256_extractf128_ps(a, 1));
+  a128 = _mm_max_ps(a128, _mm_movehl_ps(a128, a128));
+  a128 = _mm_max_ss(a128, _mm_movehdup_ps(a128));
+  return _mm_cvtss_f32(a128);
+}
+
 // Logical operations.
 static XNN_INLINE xnn_simd_f32_t xnn_and_f32(xnn_simd_f32_t a,
                                              xnn_simd_f32_t b) {
@@ -104,6 +125,11 @@ static XNN_INLINE xnn_simd_f32_t xnn_xor_f32(xnn_simd_f32_t a,
   return _mm256_xor_ps(a, b);
 }
 
+static XNN_INLINE xnn_simd_f32_t xnn_andnot_f32(xnn_simd_f32_t a,
+                                                xnn_simd_f32_t b) {
+  return _mm256_andnot_ps(a, b);
+}
+
 // Special functions.
 #define XNN_SIMD_HAVE_RCP_F32 1
 #define XNN_SIMD_NUM_RCP_ITER_F32 1
@@ -115,6 +141,10 @@ static XNN_INLINE xnn_simd_f32_t xnn_rcp_f32(xnn_simd_f32_t a) {
 #define XNN_SIMD_NUM_RSQRT_ITER_F32 1
 static XNN_INLINE xnn_simd_f32_t xnn_rsqrt_f32(xnn_simd_f32_t a) {
   return _mm256_rsqrt_ps(a);
+}
+
+static XNN_INLINE xnn_simd_f32_t xnn_sqrt_f32(xnn_simd_f32_t a) {
+  return _mm256_sqrt_ps(a);
 }
 
 // Load/store operations.
@@ -175,4 +205,4 @@ static XNN_INLINE void xnn_store_tail_f32(float* output, xnn_simd_f32_t v,
   }
 }
 
-#endif  // __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_BASE_H_
+#endif  // XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_BASE_H_

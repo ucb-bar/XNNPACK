@@ -6,7 +6,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#pragma once
+#ifndef XNNPACK_TEST_OPERATORS_CONVOLUTION_OPERATOR_TESTER_H_
+#define XNNPACK_TEST_OPERATORS_CONVOLUTION_OPERATOR_TESTER_H_
 
 #include <algorithm>
 #include <cassert>
@@ -26,8 +27,10 @@
 #include "src/xnnpack/cache.h"
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/config.h"
+#include "src/xnnpack/internal.h"
 #include "src/xnnpack/math.h"
 #include "src/xnnpack/microparams.h"
+#include "src/xnnpack/operator.h"
 #include "test/operators/convolution-test-helpers.h"
 #include "test/replicable_random_device.h"
 #include <pthreadpool.h>
@@ -701,8 +704,7 @@ class ConvolutionOperatorTester {
           requantization_scales.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_zero_point,
           1.0f /* output scale */, int8_t(qmin() - 0x80), int8_t(qmax() - 0x80),
-          flags,
-          /*code_cache=*/nullptr, auto_weights_cache.get(), &convolution_op);
+          flags, auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -719,11 +721,10 @@ class ConvolutionOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_convolution_op(convolution_op, xnn_delete_operator);
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qs8_qc8w(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
@@ -731,13 +732,11 @@ class ConvolutionOperatorTester {
       if (transient_indirection_buffer()) {
         ASSERT_NE(workspace_size, 0);
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
       } else {
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_NE(workspace_alignment, SIZE_MAX);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
@@ -746,7 +745,8 @@ class ConvolutionOperatorTester {
                 xnn_run_operator(convolution_op, auto_threadpool.get()));
 
       // Verify results.
-      VerifyNHWCxQC8(output, output_ref);
+      VerifyNHWCxQC8(batch_size(), output_height(), output_width(), output,
+                     output_ref);
 
       if (use_weights_cache()) {
         xnn_operator_t convolution_op2 = nullptr;
@@ -765,8 +765,8 @@ class ConvolutionOperatorTester {
             1.0f /* input scale */, requantization_scales.data(), kernel.data(),
             has_bias() ? bias.data() : nullptr, output_zero_point,
             1.0f /* output scale */, int8_t(qmin() - 0x80),
-            int8_t(qmax() - 0x80), flags,
-            /*code_cache=*/nullptr, auto_weights_cache.get(), &convolution_op2);
+            int8_t(qmax() - 0x80), flags, auto_weights_cache.get(),
+            &convolution_op2);
         (void)status;
         ASSERT_NE(nullptr, convolution_op2);
 
@@ -775,11 +775,10 @@ class ConvolutionOperatorTester {
             auto_convolution_op(convolution_op2, xnn_delete_operator);
         xnnpack::Buffer<int8_t> output2(output.size(), INT8_C(0xA5));
         size_t workspace_size = SIZE_MAX;
-        size_t workspace_alignment = SIZE_MAX;
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_convolution2d_nhwc_qs8_qc8w(
                       convolution_op2, batch_size(), input_height(),
-                      input_width(), &workspace_size, &workspace_alignment,
+                      input_width(), &workspace_size,
                       /*output_height_out=*/nullptr,
                       /*output_width_out=*/nullptr, auto_threadpool.get()));
         xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
@@ -788,13 +787,11 @@ class ConvolutionOperatorTester {
         if (transient_indirection_buffer()) {
           ASSERT_NE(workspace_size, 0);
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
         } else {
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_NE(workspace_alignment, SIZE_MAX);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
@@ -802,43 +799,323 @@ class ConvolutionOperatorTester {
         ASSERT_EQ(xnn_status_success,
                   xnn_run_operator(convolution_op2, auto_threadpool.get()));
 
-        VerifyNHWCxQC8(output2, output_ref);
+        VerifyNHWCxQC8(batch_size(), output_height(), output_width(), output2,
+                       output_ref);
         VerifyWeightsCache(*internal_weights_cache, old_weights_cache_size);
       }
     }
   }
 
-  void VerifyNHWCxQC8(const xnnpack::Buffer<int8_t>& output,
+  void TestNHWCxPQC8() const {
+    ASSERT_EQ(weights_type(), WeightsType::Default);
+
+    xnnpack::ReplicableRandomDevice rng;
+    std::uniform_int_distribution<int32_t> i32dist(-10000, 10000);
+    std::uniform_int_distribution<int32_t> i8dist(
+        std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max());
+    std::uniform_int_distribution<int32_t> w8dist(
+        -std::numeric_limits<int8_t>::max(),
+        std::numeric_limits<int8_t>::max());
+
+    xnnpack::Buffer<int8_t> input(
+        batch_size() *
+            ((input_height() * input_width() - 1) * input_channel_stride() +
+             groups() * group_input_channels()),
+        xnnpack::XnnExtraBytes);
+    xnnpack::Buffer<int8_t> kernel(groups() * group_output_channels() *
+                                       kernel_height() * kernel_width() *
+                                       group_input_channels(),
+                                   xnnpack::XnnExtraBytes);
+    xnnpack::Buffer<int32_t> bias(groups() * group_output_channels());
+    xnnpack::Buffer<int8_t> output(
+        batch_size() *
+        ((output_height() * output_width() - 1) * output_channel_stride() +
+         groups() * group_output_channels()));
+    xnnpack::Buffer<int32_t> accumulators(batch_size() * output_height() *
+                                          output_width() * groups() *
+                                          group_output_channels());
+    xnnpack::Buffer<double> output_ref(batch_size() * output_height() *
+                                       output_width() * groups() *
+                                       group_output_channels());
+    xnnpack::Buffer<float> requantization_scales(groups() *
+                                                 group_output_channels());
+
+    const int8_t input_zero_point = -1;
+    const int8_t output_zero_point = -1;
+
+    for (size_t iteration = 0; iteration < kIterations; iteration++) {
+      std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)>
+          auto_threadpool{nullptr, pthreadpool_destroy};
+      if (multithreaded()) {
+        const pthreadpool_t threadpool = pthreadpool_create(num_threads());
+        if (pthreadpool_get_threads_count(threadpool) <= 1) {
+          GTEST_SKIP();
+        } else {
+          auto_threadpool.reset(threadpool);
+        }
+      }
+
+      std::generate(input.begin(), input.end(), [&]() { return i8dist(rng); });
+      std::generate(kernel.begin(), kernel.end(),
+                    [&]() { return w8dist(rng); });
+      std::generate(bias.begin(), bias.end(), [&]() { return i32dist(rng); });
+
+      // Compute reference results, without renormalization.
+      if (depthwise_layout()) {
+        ASSERT_EQ(group_input_channels(), 1);
+        xnnpack::compute_depthwise_convolution_qs8_reference_results(
+            batch_size(), output_height(), output_width(), input_height(),
+            input_width(), padding_top(), padding_right(), padding_bottom(),
+            padding_left(), kernel_height(), kernel_width(),
+            subsampling_height(), subsampling_width(), dilation_height(),
+            dilation_width(), groups(), group_output_channels(),
+            input_channel_stride(), input_zero_point, input, kernel,
+            accumulators, has_bias(), bias);
+      } else {
+        xnnpack::compute_convolution_qs8_reference_results(
+            batch_size(), output_height(), output_width(), input_height(),
+            input_width(), padding_top(), padding_right(), padding_bottom(),
+            padding_left(), kernel_height(), kernel_width(),
+            subsampling_height(), subsampling_width(), dilation_height(),
+            dilation_width(), groups(), group_input_channels(),
+            group_output_channels(), input_channel_stride(), input_zero_point,
+            input, kernel, accumulators, has_bias(), bias);
+      }
+
+      // Compute renormalization parameters.
+      for (size_t c = 0; c < groups() * group_output_channels(); c++) {
+        int32_t accumulated_min = accumulators[c];
+        int32_t accumulated_max = accumulators[c];
+        for (size_t px = 0;
+             px < batch_size() * output_height() * output_width(); px++) {
+          accumulated_min = std::min(
+              accumulated_min,
+              accumulators[px * groups() * group_output_channels() + c]);
+          accumulated_max = std::max(
+              accumulated_max,
+              accumulators[px * groups() * group_output_channels() + c]);
+        }
+
+        float requantization_scale = 2.3283064e-10f;
+        if (accumulated_max != 0) {
+          requantization_scale = std::max(
+              requantization_scale,
+              static_cast<float>(
+                  static_cast<int32_t>(std::numeric_limits<int8_t>::max()) -
+                  static_cast<int32_t>(output_zero_point)) /
+                  static_cast<float>(accumulated_max));
+        }
+        if (accumulated_min != 0) {
+          requantization_scale = std::max(
+              requantization_scale,
+              static_cast<float>(
+                  static_cast<int32_t>(std::numeric_limits<int8_t>::min()) -
+                  static_cast<int32_t>(output_zero_point)) /
+                  static_cast<float>(accumulated_min));
+        }
+        requantization_scale = std::min(requantization_scale, 1.0f - 1e-6f);
+
+        requantization_scales[c] = requantization_scale;
+      }
+
+      // Renormalize reference results.
+      for (size_t c = 0; c < groups() * group_output_channels(); c++) {
+        for (size_t px = 0;
+             px < batch_size() * output_height() * output_width(); px++) {
+          output_ref[px * groups() * group_output_channels() + c] =
+              static_cast<double>(static_cast<int32_t>(output_zero_point)) +
+              static_cast<double>(
+                  accumulators[px * groups() * group_output_channels() + c]) *
+                  static_cast<double>(requantization_scales[c]);
+        }
+      }
+      std::transform(
+          output_ref.cbegin(), output_ref.cend(), output_ref.begin(),
+          [this](double x) -> double {
+            return std::max<double>(
+                std::min<double>(x, static_cast<double>(qmax() - 0x80)),
+                static_cast<double>(qmin() - 0x80));
+          });
+
+      // Create, setup, run, and destroy Convolution operator.
+      ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
+      xnn_operator_t convolution_op = nullptr;
+      struct xnn_internal_weights_cache* internal_weights_cache = nullptr;
+      std::unique_ptr<xnn_weights_cache_provider,
+                      decltype(&xnn_delete_weights_cache)>
+          auto_weights_cache(nullptr, xnn_delete_weights_cache);
+      if (use_weights_cache()) {
+        xnn_weights_cache_t weights_cache = nullptr;
+        xnn_create_weights_cache(&weights_cache);
+        auto_weights_cache.reset(weights_cache);
+        if (weights_cache) {
+          internal_weights_cache =
+              (struct xnn_internal_weights_cache*)weights_cache->context;
+        }
+      }
+
+      uint32_t flags = XNN_FLAG_INLINE_LHS_PACKING;
+      if (depthwise_layout()) {
+        flags |= XNN_FLAG_DEPTHWISE_CONVOLUTION;
+      }
+      if (padding_tf_same()) {
+        flags |= XNN_FLAG_TENSORFLOW_SAME_PADDING;
+      }
+      if (transient_indirection_buffer()) {
+        flags |= XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER;
+      }
+      xnn_status status = xnn_create_convolution2d_nhwc_pqs8_qs8_qc8w(
+          padding_tf_same() ? 0 : padding_top(),
+          padding_tf_same() ? 0 : padding_right(),
+          padding_tf_same() ? 0 : padding_bottom(),
+          padding_tf_same() ? 0 : padding_left(), kernel_height(),
+          kernel_width(), subsampling_height(), subsampling_width(),
+          dilation_height(), dilation_width(), groups(), group_input_channels(),
+          group_output_channels(), input_channel_stride(),
+          output_channel_stride(), input_zero_point, 1.0f /* input scale */,
+          requantization_scales.data(), kernel.data(),
+          has_bias() ? bias.data() : nullptr, output_zero_point,
+          1.0f /* output scale */, static_cast<int8_t>(qmin() - 0x80),
+          static_cast<int8_t>(qmax() - 0x80), flags, auto_weights_cache.get(),
+          &convolution_op);
+      if (status == xnn_status_unsupported_hardware) {
+        GTEST_SKIP();
+      }
+      ASSERT_EQ(xnn_status_success, status);
+      ASSERT_NE(nullptr, convolution_op);
+      if (use_weights_cache()) {
+        ASSERT_EQ(xnn_status_success,
+                  xnn_finalize_weights_cache(
+                      auto_weights_cache.get(),
+                      xnn_weights_cache_finalization_kind_soft));
+      }
+
+      // Smart pointer to automatically delete convolution_op.
+      std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
+          auto_convolution_op(convolution_op, xnn_delete_operator);
+      size_t workspace_size = SIZE_MAX;
+      ASSERT_EQ(xnn_status_success,
+                xnn_reshape_convolution2d_nhwc_pqs8_qs8_qc8w(
+                    convolution_op, batch_size(), input_height(), input_width(),
+                    &workspace_size,
+                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
+                    auto_threadpool.get()));
+      xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
+      std::iota(workspace.begin(), workspace.end(), 0);
+      if (transient_indirection_buffer()) {
+        ASSERT_NE(workspace_size, 0);
+        ASSERT_NE(workspace_size, SIZE_MAX);
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_setup_convolution2d_nhwc_pqs8_qs8_qc8w(
+                convolution_op, workspace.data(), input.data(), output.data()));
+      } else {
+        ASSERT_NE(workspace_size, SIZE_MAX);
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_setup_convolution2d_nhwc_pqs8_qs8_qc8w(
+                convolution_op, workspace.data(), input.data(), output.data()));
+      }
+      ASSERT_EQ(xnn_status_success,
+                xnn_run_operator(convolution_op, auto_threadpool.get()));
+
+      // Verify results.
+      VerifyNHWCxQC8(batch_size(), output_height(), output_width(), output,
+                     output_ref);
+
+      if (use_weights_cache()) {
+        xnn_operator_t convolution_op2 = nullptr;
+        size_t old_weights_cache_size =
+            internal_weights_cache->cache.weights.size;
+
+        xnn_status status = xnn_create_convolution2d_nhwc_pqs8_qs8_qc8w(
+            padding_tf_same() ? 0 : padding_top(),
+            padding_tf_same() ? 0 : padding_right(),
+            padding_tf_same() ? 0 : padding_bottom(),
+            padding_tf_same() ? 0 : padding_left(), kernel_height(),
+            kernel_width(), subsampling_height(), subsampling_width(),
+            dilation_height(), dilation_width(), groups(),
+            group_input_channels(), group_output_channels(),
+            input_channel_stride(), output_channel_stride(), input_zero_point,
+            1.0f /* input scale */, requantization_scales.data(), kernel.data(),
+            has_bias() ? bias.data() : nullptr, output_zero_point,
+            1.0f /* output scale */, static_cast<int8_t>(qmin() - 0x80),
+            static_cast<int8_t>(qmax() - 0x80), flags, auto_weights_cache.get(),
+            &convolution_op2);
+        (void)status;
+        ASSERT_NE(nullptr, convolution_op2);
+
+        // Smart pointer to automatically delete convolution_op2.
+        std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
+            auto_convolution_op(convolution_op2, xnn_delete_operator);
+        xnnpack::Buffer<int8_t> output2(output.size(), INT8_C(0xA5));
+        size_t workspace_size = SIZE_MAX;
+        ASSERT_EQ(xnn_status_success,
+                  xnn_reshape_convolution2d_nhwc_pqs8_qs8_qc8w(
+                      convolution_op2, batch_size(), input_height(),
+                      input_width(), &workspace_size,
+                      /*output_height_out=*/nullptr,
+                      /*output_width_out=*/nullptr, auto_threadpool.get()));
+        xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
+            workspace_size);
+        std::iota(workspace.begin(), workspace.end(), 0);
+        if (transient_indirection_buffer()) {
+          ASSERT_NE(workspace_size, 0);
+          ASSERT_NE(workspace_size, SIZE_MAX);
+          ASSERT_EQ(xnn_status_success,
+                    xnn_setup_convolution2d_nhwc_pqs8_qs8_qc8w(
+                        convolution_op2, workspace.data(), input.data(),
+                        output2.data()));
+        } else {
+          ASSERT_NE(workspace_size, SIZE_MAX);
+          ASSERT_EQ(xnn_status_success,
+                    xnn_setup_convolution2d_nhwc_pqs8_qs8_qc8w(
+                        convolution_op2, workspace.data(), input.data(),
+                        output2.data()));
+        }
+        ASSERT_EQ(xnn_status_success,
+                  xnn_run_operator(convolution_op2, auto_threadpool.get()));
+
+        VerifyNHWCxQC8(batch_size(), output_height(), output_width(), output2,
+                       output_ref);
+        VerifyWeightsCache(*internal_weights_cache, old_weights_cache_size);
+      }
+    }
+  }
+
+  void VerifyNHWCxQC8(size_t batch_size, size_t output_height,
+                      size_t output_width,
+                      const xnnpack::Buffer<int8_t>& output,
                       const xnnpack::Buffer<double>& output_ref) const {
-    for (size_t i = 0; i < batch_size(); i++) {
-      for (size_t y = 0; y < output_height(); y++) {
-        for (size_t x = 0; x < output_width(); x++) {
+    for (size_t i = 0; i < batch_size; i++) {
+      for (size_t y = 0; y < output_height; y++) {
+        for (size_t x = 0; x < output_width; x++) {
           for (size_t g = 0; g < groups(); g++) {
             for (size_t c = 0; c < group_output_channels(); c++) {
               EXPECT_LE(
-                  int32_t(
-                      output[((i * output_height() + y) * output_width() + x) *
+                  static_cast<int32_t>(
+                      output[((i * output_height + y) * output_width + x) *
                                  output_channel_stride() +
                              g * group_output_channels() + c]),
-                  int32_t(qmax() - 0x80))
+                  static_cast<int32_t>(qmax() - 0x80))
                   << "(x, y) = (" << x << ", " << y << "), group = " << g
                   << ", channel = " << c;
               EXPECT_GE(
-                  int32_t(
-                      output[((i * output_height() + y) * output_width() + x) *
+                  static_cast<int32_t>(
+                      output[((i * output_height + y) * output_width + x) *
                                  output_channel_stride() +
                              g * group_output_channels() + c]),
-                  int32_t(qmin() - 0x80))
+                  static_cast<int32_t>(qmin() - 0x80))
                   << "(x, y) = (" << x << ", " << y << "), group = " << g
                   << ", channel = " << c;
               ASSERT_NEAR(
-                  output_ref[(((i * output_height() + y) * output_width() + x) *
+                  output_ref[(((i * output_height + y) * output_width + x) *
                                   groups() +
                               g) *
                                  group_output_channels() +
                              c],
-                  double(
-                      output[((i * output_height() + y) * output_width() + x) *
+                  static_cast<double>(
+                      output[((i * output_height + y) * output_width + x) *
                                  output_channel_stride() +
                              g * group_output_channels() + c]),
                   0.9)
@@ -966,7 +1243,7 @@ class ConvolutionOperatorTester {
           group_output_channels(), input_channel_stride(),
           output_channel_stride(), kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max, flags,
-          /*code_cache=*/nullptr, auto_weights_cache.get(), &convolution_op);
+          auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -984,11 +1261,10 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qd8_f16_qc8w(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
@@ -996,7 +1272,6 @@ class ConvolutionOperatorTester {
       if (transient_indirection_buffer()) {
         ASSERT_NE(workspace_size, 0);
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
         ASSERT_EQ(
             xnn_status_success,
             xnn_setup_convolution2d_nhwc_qd8_f16_qc8w(
@@ -1005,7 +1280,6 @@ class ConvolutionOperatorTester {
                     quantization_params.data())));
       } else {
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_NE(workspace_alignment, SIZE_MAX);
         ASSERT_EQ(
             xnn_status_success,
             xnn_setup_convolution2d_nhwc_qd8_f16_qc8w(
@@ -1024,20 +1298,20 @@ class ConvolutionOperatorTester {
         size_t old_weights_cache_size =
             internal_weights_cache->cache.weights.size;
 
-        ASSERT_EQ(xnn_status_success,
-                  xnn_create_convolution2d_nhwc_qd8_f16_qc8w(
-                      padding_tf_same() ? 0 : padding_top(),
-                      padding_tf_same() ? 0 : padding_right(),
-                      padding_tf_same() ? 0 : padding_bottom(),
-                      padding_tf_same() ? 0 : padding_left(), kernel_height(),
-                      kernel_width(), subsampling_height(), subsampling_width(),
-                      dilation_height(), dilation_width(), groups(),
-                      group_input_channels(), group_output_channels(),
-                      input_channel_stride(), output_channel_stride(),
-                      kernel_scale.data(), kernel.data(),
-                      has_bias() ? bias.data() : nullptr, output_min,
-                      output_max, flags, /*code_cache=*/nullptr,
-                      auto_weights_cache.get(), &convolution_op2));
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_create_convolution2d_nhwc_qd8_f16_qc8w(
+                padding_tf_same() ? 0 : padding_top(),
+                padding_tf_same() ? 0 : padding_right(),
+                padding_tf_same() ? 0 : padding_bottom(),
+                padding_tf_same() ? 0 : padding_left(), kernel_height(),
+                kernel_width(), subsampling_height(), subsampling_width(),
+                dilation_height(), dilation_width(), groups(),
+                group_input_channels(), group_output_channels(),
+                input_channel_stride(), output_channel_stride(),
+                kernel_scale.data(), kernel.data(),
+                has_bias() ? bias.data() : nullptr, output_min, output_max,
+                flags, auto_weights_cache.get(), &convolution_op2));
         ASSERT_NE(nullptr, convolution_op2);
 
         // Smart pointer to automatically delete convolution_op.
@@ -1046,11 +1320,10 @@ class ConvolutionOperatorTester {
 
         xnnpack::Buffer<xnn_float16> output2(output.size());
         size_t workspace_size = SIZE_MAX;
-        size_t workspace_alignment = SIZE_MAX;
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_convolution2d_nhwc_qd8_f16_qc8w(
                       convolution_op2, batch_size(), input_height(),
-                      input_width(), &workspace_size, &workspace_alignment,
+                      input_width(), &workspace_size,
                       /*output_height_out=*/nullptr,
                       /*output_width_out=*/nullptr, auto_threadpool.get()));
         xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
@@ -1059,7 +1332,6 @@ class ConvolutionOperatorTester {
         if (transient_indirection_buffer()) {
           ASSERT_NE(workspace_size, 0);
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
           ASSERT_EQ(xnn_status_success,
                     xnn_setup_convolution2d_nhwc_qd8_f16_qc8w(
                         convolution_op2, workspace.data(), input.data(),
@@ -1068,7 +1340,6 @@ class ConvolutionOperatorTester {
                             quantization_params.data())));
         } else {
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_NE(workspace_alignment, SIZE_MAX);
           ASSERT_EQ(xnn_status_success,
                     xnn_setup_convolution2d_nhwc_qd8_f16_qc8w(
                         convolution_op2, workspace.data(), input.data(),
@@ -1189,7 +1460,7 @@ class ConvolutionOperatorTester {
           group_output_channels(), input_channel_stride(),
           output_channel_stride(), kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max, flags,
-          /*code_cache=*/nullptr, auto_weights_cache.get(), &convolution_op);
+          auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -1207,11 +1478,10 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qd8_f32_qc8w(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
@@ -1219,7 +1489,6 @@ class ConvolutionOperatorTester {
       if (transient_indirection_buffer()) {
         ASSERT_NE(workspace_size, 0);
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
         ASSERT_EQ(
             xnn_status_success,
             xnn_setup_convolution2d_nhwc_qd8_f32_qc8w(
@@ -1228,7 +1497,6 @@ class ConvolutionOperatorTester {
                     quantization_params.data())));
       } else {
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_NE(workspace_alignment, SIZE_MAX);
         ASSERT_EQ(
             xnn_status_success,
             xnn_setup_convolution2d_nhwc_qd8_f32_qc8w(
@@ -1246,20 +1514,20 @@ class ConvolutionOperatorTester {
         size_t old_weights_cache_size =
             internal_weights_cache->cache.weights.size;
 
-        ASSERT_EQ(xnn_status_success,
-                  xnn_create_convolution2d_nhwc_qd8_f32_qc8w(
-                      padding_tf_same() ? 0 : padding_top(),
-                      padding_tf_same() ? 0 : padding_right(),
-                      padding_tf_same() ? 0 : padding_bottom(),
-                      padding_tf_same() ? 0 : padding_left(), kernel_height(),
-                      kernel_width(), subsampling_height(), subsampling_width(),
-                      dilation_height(), dilation_width(), groups(),
-                      group_input_channels(), group_output_channels(),
-                      input_channel_stride(), output_channel_stride(),
-                      kernel_scale.data(), kernel.data(),
-                      has_bias() ? bias.data() : nullptr, output_min,
-                      output_max, flags, /*code_cache=*/nullptr,
-                      auto_weights_cache.get(), &convolution_op2));
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_create_convolution2d_nhwc_qd8_f32_qc8w(
+                padding_tf_same() ? 0 : padding_top(),
+                padding_tf_same() ? 0 : padding_right(),
+                padding_tf_same() ? 0 : padding_bottom(),
+                padding_tf_same() ? 0 : padding_left(), kernel_height(),
+                kernel_width(), subsampling_height(), subsampling_width(),
+                dilation_height(), dilation_width(), groups(),
+                group_input_channels(), group_output_channels(),
+                input_channel_stride(), output_channel_stride(),
+                kernel_scale.data(), kernel.data(),
+                has_bias() ? bias.data() : nullptr, output_min, output_max,
+                flags, auto_weights_cache.get(), &convolution_op2));
         ASSERT_NE(nullptr, convolution_op2);
 
         // Smart pointer to automatically delete convolution_op.
@@ -1268,11 +1536,10 @@ class ConvolutionOperatorTester {
 
         xnnpack::Buffer<float> output2(output.size());
         size_t workspace_size = SIZE_MAX;
-        size_t workspace_alignment = SIZE_MAX;
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_convolution2d_nhwc_qd8_f32_qc8w(
                       convolution_op2, batch_size(), input_height(),
-                      input_width(), &workspace_size, &workspace_alignment,
+                      input_width(), &workspace_size,
                       /*output_height_out=*/nullptr,
                       /*output_width_out=*/nullptr, auto_threadpool.get()));
         xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
@@ -1281,7 +1548,6 @@ class ConvolutionOperatorTester {
         if (transient_indirection_buffer()) {
           ASSERT_NE(workspace_size, 0);
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
           ASSERT_EQ(xnn_status_success,
                     xnn_setup_convolution2d_nhwc_qd8_f32_qc8w(
                         convolution_op2, workspace.data(), input.data(),
@@ -1290,7 +1556,6 @@ class ConvolutionOperatorTester {
                             quantization_params.data())));
         } else {
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_NE(workspace_alignment, SIZE_MAX);
           ASSERT_EQ(xnn_status_success,
                     xnn_setup_convolution2d_nhwc_qd8_f32_qc8w(
                         convolution_op2, workspace.data(), input.data(),
@@ -1444,7 +1709,7 @@ class ConvolutionOperatorTester {
           1.0f /* kernel scale */, kernel.data(),
           has_bias() ? bias.data() : nullptr, output_zero_point, output_scale,
           int8_t(qmin() - 0x80), int8_t(qmax() - 0x80), flags,
-          /*code_cache=*/nullptr, auto_weights_cache.get(), &convolution_op);
+          auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -1462,11 +1727,10 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qs8(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
@@ -1474,13 +1738,11 @@ class ConvolutionOperatorTester {
       if (transient_indirection_buffer()) {
         ASSERT_NE(workspace_size, 0);
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
       } else {
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_NE(workspace_alignment, SIZE_MAX);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
@@ -1495,23 +1757,22 @@ class ConvolutionOperatorTester {
         size_t old_weights_cache_size =
             internal_weights_cache->cache.weights.size;
 
-        ASSERT_EQ(xnn_status_success,
-                  xnn_create_convolution2d_nhwc_qs8(
-                      padding_tf_same() ? 0 : padding_top(),
-                      padding_tf_same() ? 0 : padding_right(),
-                      padding_tf_same() ? 0 : padding_bottom(),
-                      padding_tf_same() ? 0 : padding_left(), kernel_height(),
-                      kernel_width(), subsampling_height(), subsampling_width(),
-                      dilation_height(), dilation_width(), groups(),
-                      group_input_channels(), group_output_channels(),
-                      input_channel_stride(), output_channel_stride(),
-                      input_zero_point, 1.0f /* input scale */,
-                      1.0f /* kernel scale */, kernel.data(),
-                      has_bias() ? bias.data() : nullptr, output_zero_point,
-                      output_scale, int8_t(qmin() - 0x80),
-                      int8_t(qmax() - 0x80), flags,
-                      /*code_cache=*/nullptr, auto_weights_cache.get(),
-                      &convolution_op2));
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_create_convolution2d_nhwc_qs8(
+                padding_tf_same() ? 0 : padding_top(),
+                padding_tf_same() ? 0 : padding_right(),
+                padding_tf_same() ? 0 : padding_bottom(),
+                padding_tf_same() ? 0 : padding_left(), kernel_height(),
+                kernel_width(), subsampling_height(), subsampling_width(),
+                dilation_height(), dilation_width(), groups(),
+                group_input_channels(), group_output_channels(),
+                input_channel_stride(), output_channel_stride(),
+                input_zero_point, 1.0f /* input scale */,
+                1.0f /* kernel scale */, kernel.data(),
+                has_bias() ? bias.data() : nullptr, output_zero_point,
+                output_scale, int8_t(qmin() - 0x80), int8_t(qmax() - 0x80),
+                flags, auto_weights_cache.get(), &convolution_op2));
         ASSERT_NE(nullptr, convolution_op2);
 
         // Smart pointer to automatically delete convolution_op.
@@ -1520,11 +1781,10 @@ class ConvolutionOperatorTester {
 
         xnnpack::Buffer<int8_t> output2(output.size(), INT8_C(0xA5));
         size_t workspace_size = SIZE_MAX;
-        size_t workspace_alignment = SIZE_MAX;
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_convolution2d_nhwc_qs8(
                       convolution_op2, batch_size(), input_height(),
-                      input_width(), &workspace_size, &workspace_alignment,
+                      input_width(), &workspace_size,
                       /*output_height_out=*/nullptr,
                       /*output_width_out=*/nullptr, auto_threadpool.get()));
         xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
@@ -1533,13 +1793,11 @@ class ConvolutionOperatorTester {
         if (transient_indirection_buffer()) {
           ASSERT_NE(workspace_size, 0);
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
         } else {
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_NE(workspace_alignment, SIZE_MAX);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
@@ -1753,8 +2011,7 @@ class ConvolutionOperatorTester {
           output_channel_stride(), input_zero_point, 1.0f /* input scale */,
           kernel_zero_point, 1.0f /* kernel scale */, kernel.data(),
           has_bias() ? bias.data() : nullptr, output_zero_point, output_scale,
-          qmin(), qmax(), flags,
-          /*code_cache=*/nullptr, auto_weights_cache.get(), &convolution_op);
+          qmin(), qmax(), flags, auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -1772,11 +2029,10 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qu8(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
@@ -1784,13 +2040,11 @@ class ConvolutionOperatorTester {
       if (transient_indirection_buffer()) {
         ASSERT_NE(workspace_size, 0);
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qu8(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
       } else {
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_NE(workspace_alignment, SIZE_MAX);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qu8(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
@@ -1820,8 +2074,7 @@ class ConvolutionOperatorTester {
                       kernel_zero_point, 1.0f /* kernel scale */, kernel.data(),
                       has_bias() ? bias.data() : nullptr, output_zero_point,
                       output_scale, qmin(), qmax(), flags,
-                      /*code_cache=*/nullptr, auto_weights_cache.get(),
-                      &convolution_op2));
+                      auto_weights_cache.get(), &convolution_op2));
         ASSERT_NE(nullptr, convolution_op2);
 
         // Smart pointer to automatically delete convolution_op2.
@@ -1830,11 +2083,10 @@ class ConvolutionOperatorTester {
         xnnpack::Buffer<uint8_t> output2(output.size(), UINT8_C(0xA5));
 
         size_t workspace_size = SIZE_MAX;
-        size_t workspace_alignment = SIZE_MAX;
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_convolution2d_nhwc_qu8(
                       convolution_op2, batch_size(), input_height(),
-                      input_width(), &workspace_size, &workspace_alignment,
+                      input_width(), &workspace_size,
                       /*output_height_out=*/nullptr,
                       /*output_width_out=*/nullptr, auto_threadpool.get()));
         xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
@@ -1843,13 +2095,11 @@ class ConvolutionOperatorTester {
         if (transient_indirection_buffer()) {
           ASSERT_NE(workspace_size, 0);
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qu8(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
         } else {
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_NE(workspace_alignment, SIZE_MAX);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qu8(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
@@ -2082,8 +2332,6 @@ class ConvolutionOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t convolution_op = nullptr;
 
-      xnn_code_cache_t auto_code_cache = nullptr;
-
       struct xnn_internal_weights_cache* internal_weights_cache = nullptr;
       std::unique_ptr<xnn_weights_cache_provider,
                       decltype(&xnn_delete_weights_cache)>
@@ -2118,7 +2366,7 @@ class ConvolutionOperatorTester {
           group_output_channels(), input_channel_stride(),
           output_channel_stride(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max, flags,
-          auto_code_cache, auto_weights_cache.get(), &convolution_op);
+          auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -2136,11 +2384,10 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_f32(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
@@ -2148,13 +2395,11 @@ class ConvolutionOperatorTester {
       if (transient_indirection_buffer()) {
         ASSERT_NE(workspace_size, 0);
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f32(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
       } else {
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_NE(workspace_alignment, SIZE_MAX);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f32(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
@@ -2165,38 +2410,34 @@ class ConvolutionOperatorTester {
       VerifyNHWCxF32(output, output_ref, output_min, output_max);
 
       if (use_weights_cache()) {
-        // We already finalized the code cache, so create a new code cache if we
-        // are testing JIT.
-        xnn_code_cache_t auto_inner_code_cache = nullptr;
         // To test weights cache, we create the operator with the same
         // parameters, and setup with a different output.
         xnn_operator_t convolution_op2 = nullptr;
         size_t old_weights_cache_size =
             internal_weights_cache->cache.weights.size;
 
-        ASSERT_EQ(xnn_status_success,
-                  xnn_create_convolution2d_nhwc_f32(
-                      padding_tf_same() ? 0 : padding_top(),
-                      padding_tf_same() ? 0 : padding_right(),
-                      padding_tf_same() ? 0 : padding_bottom(),
-                      padding_tf_same() ? 0 : padding_left(), kernel_height(),
-                      kernel_width(), subsampling_height(), subsampling_width(),
-                      dilation_height(), dilation_width(), groups(),
-                      group_input_channels(), group_output_channels(),
-                      input_channel_stride(), output_channel_stride(),
-                      kernel.data(), has_bias() ? bias.data() : nullptr,
-                      output_min, output_max, flags, auto_inner_code_cache,
-                      auto_weights_cache.get(), &convolution_op2));
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_create_convolution2d_nhwc_f32(
+                padding_tf_same() ? 0 : padding_top(),
+                padding_tf_same() ? 0 : padding_right(),
+                padding_tf_same() ? 0 : padding_bottom(),
+                padding_tf_same() ? 0 : padding_left(), kernel_height(),
+                kernel_width(), subsampling_height(), subsampling_width(),
+                dilation_height(), dilation_width(), groups(),
+                group_input_channels(), group_output_channels(),
+                input_channel_stride(), output_channel_stride(), kernel.data(),
+                has_bias() ? bias.data() : nullptr, output_min, output_max,
+                flags, auto_weights_cache.get(), &convolution_op2));
 
         ASSERT_NE(nullptr, convolution_op2);
 
         xnnpack::Buffer<float> output2(output.size());
         size_t workspace_size = SIZE_MAX;
-        size_t workspace_alignment = SIZE_MAX;
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_convolution2d_nhwc_f32(
                       convolution_op2, batch_size(), input_height(),
-                      input_width(), &workspace_size, &workspace_alignment,
+                      input_width(), &workspace_size,
                       /*output_height_out=*/nullptr,
                       /*output_width_out=*/nullptr, auto_threadpool.get()));
         xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
@@ -2205,14 +2446,11 @@ class ConvolutionOperatorTester {
         if (transient_indirection_buffer()) {
           ASSERT_NE(workspace_size, 0);
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f32(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
         } else {
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_NE(workspace_alignment, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, 1);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f32(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
@@ -2466,7 +2704,6 @@ class ConvolutionOperatorTester {
       // Create, setup, run, and destroy Convolution operator.
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t convolution_op = nullptr;
-      xnn_code_cache_t auto_code_cache = nullptr;
       struct xnn_internal_weights_cache* internal_weights_cache = nullptr;
       std::unique_ptr<xnn_weights_cache_provider,
                       decltype(&xnn_delete_weights_cache)>
@@ -2510,7 +2747,7 @@ class ConvolutionOperatorTester {
           group_output_channels(), input_channel_stride(),
           output_channel_stride(), kernel_data,
           has_bias() ? bias_data : nullptr, output_min, output_max, flags,
-          auto_code_cache, auto_weights_cache.get(), &convolution_op);
+          auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -2528,11 +2765,10 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_f16(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
@@ -2540,14 +2776,11 @@ class ConvolutionOperatorTester {
       if (transient_indirection_buffer()) {
         ASSERT_NE(workspace_size, 0);
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f16(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
       } else {
         ASSERT_NE(workspace_size, SIZE_MAX);
-        ASSERT_NE(workspace_alignment, SIZE_MAX);
-        ASSERT_EQ(workspace_alignment, 1);
         ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f16(
                                           convolution_op, workspace.data(),
                                           input.data(), output.data()));
@@ -2559,25 +2792,22 @@ class ConvolutionOperatorTester {
                      output_height(), output_width());
 
       if (use_weights_cache()) {
-        // We already finalized the code cache, so create a new code cache if we
-        // are testing JIT.
-        xnn_code_cache_t auto_inner_code_cache = nullptr;
         xnn_operator_t convolution_op2 = nullptr;
         size_t old_weights_cache_size =
             internal_weights_cache->cache.weights.size;
-        ASSERT_EQ(xnn_status_success,
-                  xnn_create_convolution2d_nhwc_f16(
-                      padding_tf_same() ? 0 : padding_top(),
-                      padding_tf_same() ? 0 : padding_right(),
-                      padding_tf_same() ? 0 : padding_bottom(),
-                      padding_tf_same() ? 0 : padding_left(), kernel_height(),
-                      kernel_width(), subsampling_height(), subsampling_width(),
-                      dilation_height(), dilation_width(), groups(),
-                      group_input_channels(), group_output_channels(),
-                      input_channel_stride(), output_channel_stride(),
-                      kernel_data, has_bias() ? bias_data : nullptr, output_min,
-                      output_max, flags, auto_inner_code_cache,
-                      auto_weights_cache.get(), &convolution_op2));
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_create_convolution2d_nhwc_f16(
+                padding_tf_same() ? 0 : padding_top(),
+                padding_tf_same() ? 0 : padding_right(),
+                padding_tf_same() ? 0 : padding_bottom(),
+                padding_tf_same() ? 0 : padding_left(), kernel_height(),
+                kernel_width(), subsampling_height(), subsampling_width(),
+                dilation_height(), dilation_width(), groups(),
+                group_input_channels(), group_output_channels(),
+                input_channel_stride(), output_channel_stride(), kernel_data,
+                has_bias() ? bias_data : nullptr, output_min, output_max, flags,
+                auto_weights_cache.get(), &convolution_op2));
         ASSERT_NE(nullptr, convolution_op2);
 
         // Smart pointer to automatically delete convolution_op.
@@ -2586,11 +2816,10 @@ class ConvolutionOperatorTester {
 
         xnnpack::Buffer<xnn_float16> output2(output.size());
         size_t workspace_size = SIZE_MAX;
-        size_t workspace_alignment = SIZE_MAX;
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_convolution2d_nhwc_f16(
                       convolution_op2, batch_size(), input_height(),
-                      input_width(), &workspace_size, &workspace_alignment,
+                      input_width(), &workspace_size,
                       /*output_height_out=*/nullptr,
                       /*output_width_out=*/nullptr, auto_threadpool.get()));
         xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(
@@ -2599,13 +2828,11 @@ class ConvolutionOperatorTester {
         if (transient_indirection_buffer()) {
           ASSERT_NE(workspace_size, 0);
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_EQ(workspace_alignment, XNN_ALLOCATION_ALIGNMENT);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f16(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
         } else {
           ASSERT_NE(workspace_size, SIZE_MAX);
-          ASSERT_NE(workspace_alignment, SIZE_MAX);
           ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f16(
                                             convolution_op2, workspace.data(),
                                             input.data(), output2.data()));
@@ -2929,7 +3156,7 @@ class ConvolutionOperatorTester {
           has_bias() ? bias.data() : nullptr, output_min, output_max,
           (depthwise_layout() ? XNN_FLAG_DEPTHWISE_CONVOLUTION : 0) |
               (force_nhwc_input() ? XNN_FLAG_INPUT_NHWC : 0),
-          nullptr, auto_weights_cache.get(), &convolution_op);
+          auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -2975,8 +3202,7 @@ class ConvolutionOperatorTester {
                 has_bias() ? bias.data() : nullptr, output_min, output_max,
                 (depthwise_layout() ? XNN_FLAG_DEPTHWISE_CONVOLUTION : 0) |
                     (force_nhwc_input() ? XNN_FLAG_INPUT_NHWC : 0),
-                /*code_cache=*/nullptr, auto_weights_cache.get(),
-                &convolution_op2));
+                auto_weights_cache.get(), &convolution_op2));
         ASSERT_NE(nullptr, convolution_op2);
 
         // Smart pointer to automatically delete convolution_op2.
@@ -3340,7 +3566,7 @@ class ConvolutionOperatorTester {
           group_input_channels(), group_output_channels(),
           input_channel_stride(), output_channel_stride(), kernel_data,
           has_bias() ? bias_data : nullptr, output_min, output_max, flags,
-          /*code_cache=*/nullptr, auto_weights_cache.get(), &convolution_op);
+          auto_weights_cache.get(), &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -3385,8 +3611,7 @@ class ConvolutionOperatorTester {
                 group_output_channels(), input_channel_stride(),
                 output_channel_stride(), kernel_data,
                 has_bias() ? bias_data : nullptr, output_min, output_max, flags,
-                /*code_cache=*/nullptr, auto_weights_cache.get(),
-                &convolution_op2));
+                auto_weights_cache.get(), &convolution_op2));
 
         ASSERT_NE(nullptr, convolution_op2);
 
@@ -3508,9 +3733,156 @@ class ConvolutionOperatorTester {
         next_batch_size() * ((next_output_height() * next_output_width() - 1) *
                                  output_channel_stride() +
                              groups() * group_output_channels())));
-    xnnpack::Buffer<int32_t> accumulators(batch_size() * output_height() *
-                                          output_width() * groups() *
-                                          group_output_channels());
+    xnnpack::Buffer<double> output_ref(batch_size() * output_height() *
+                                       output_width() * groups() *
+                                       group_output_channels());
+    xnnpack::Buffer<float> requantization_scales(groups() *
+                                                 group_output_channels());
+    xnnpack::Buffer<int32_t> next_accumulators(
+        next_batch_size() * next_output_height() * next_output_width() *
+        groups() * group_output_channels());
+    xnnpack::Buffer<double> next_output_ref(
+        next_batch_size() * next_output_height() * next_output_width() *
+        groups() * group_output_channels());
+
+    const int8_t input_zero_point = -1;
+    const int8_t output_zero_point = -1;
+
+    for (size_t iteration = 0; iteration < kIterations; iteration++) {
+      std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)>
+          auto_threadpool{nullptr, pthreadpool_destroy};
+      if (multithreaded()) {
+        const pthreadpool_t threadpool = pthreadpool_create(num_threads());
+        if (pthreadpool_get_threads_count(threadpool) <= 1) {
+          GTEST_SKIP();
+        } else {
+          auto_threadpool.reset(threadpool);
+        }
+      }
+
+      std::generate(input.begin(), input.end(), [&]() { return i8dist(rng); });
+      std::generate(kernel.begin(), kernel.end(),
+                    [&]() { return w8dist(rng); });
+      std::generate(bias.begin(), bias.end(), [&]() { return i32dist(rng); });
+
+      ComputeReferenceResultxQC8(
+          input, kernel, bias, input_zero_point, output_zero_point,
+          batch_size(), input_height(), input_width(), output_height(),
+          output_width(), output_ref, requantization_scales,
+          /*recompute_scales=*/true);
+
+      // Create, setup, and run Convolution operator once.
+      ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
+      xnn_operator_t convolution_op = nullptr;
+
+      xnn_status status = xnn_create_convolution2d_nhwc_qs8_qc8w(
+          padding_top(), padding_right(), padding_bottom(), padding_left(),
+          kernel_height(), kernel_width(), subsampling_height(),
+          subsampling_width(), dilation_height(), dilation_width(), groups(),
+          group_input_channels(), group_output_channels(),
+          input_channel_stride(), output_channel_stride(), input_zero_point,
+          1.0f /* input scale */, requantization_scales.data(), kernel.data(),
+          has_bias() ? bias.data() : nullptr, output_zero_point,
+          1.0f /* output scale */, static_cast<int8_t>(qmin() - 0x80),
+          static_cast<int8_t>(qmax() - 0x80), 0, nullptr, &convolution_op);
+      if (status == xnn_status_unsupported_hardware) {
+        GTEST_SKIP();
+      }
+      ASSERT_EQ(xnn_status_success, status);
+      ASSERT_NE(nullptr, convolution_op);
+
+      // Smart pointer to automatically delete convolution_op.
+      std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
+          auto_convolution_op(convolution_op, xnn_delete_operator);
+
+      size_t workspace_size = SIZE_MAX;
+      ASSERT_EQ(xnn_status_success,
+                xnn_reshape_convolution2d_nhwc_qs8_qc8w(
+                    convolution_op, batch_size(), input_height(), input_width(),
+                    &workspace_size,
+                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
+                    auto_threadpool.get()));
+      xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
+      std::iota(workspace.begin(), workspace.end(), 0);
+      ASSERT_NE(workspace_size, SIZE_MAX);
+      ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
+                                        convolution_op, workspace.data(),
+                                        input.data(), output.data()));
+      ASSERT_EQ(xnn_status_success,
+                xnn_run_operator(convolution_op, auto_threadpool.get()));
+
+      // Verify results of the first run.
+      VerifyNHWCxQC8(batch_size(), output_height(), output_width(), output,
+                     output_ref);
+
+      // Re-generate data for the second run.
+      std::generate(input.begin(), input.end(), [&]() { return i8dist(rng); });
+
+      // Compute reference results for the second run, including
+      // renormalization.
+      ComputeReferenceResultxQC8(input, kernel, bias, input_zero_point,
+                                 output_zero_point, next_batch_size(),
+                                 next_input_height(), next_input_width(),
+                                 next_output_height(), next_output_width(),
+                                 next_output_ref, requantization_scales,
+                                 /*recompute_scales=*/false);
+
+      // Setup and run Convolution operator the second time, and destroy the
+      // operator.
+      workspace_size = SIZE_MAX;
+      ASSERT_EQ(xnn_status_success,
+                xnn_reshape_convolution2d_nhwc_qs8_qc8w(
+                    convolution_op, next_batch_size(), next_input_height(),
+                    next_input_width(), &workspace_size,
+                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
+                    auto_threadpool.get()));
+      ASSERT_NE(workspace_size, SIZE_MAX);
+      ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
+                                        convolution_op, workspace.data(),
+                                        input.data(), output.data()));
+      ASSERT_EQ(xnn_status_success,
+                xnn_run_operator(convolution_op, auto_threadpool.get()));
+
+      // Verify results of the second run.
+      VerifyNHWCxQC8(next_batch_size(), next_output_height(),
+                     next_output_width(), output, next_output_ref);
+    }
+  }
+
+  void TestSetupNHWCxPQC8() const {
+    ASSERT_EQ(weights_type(), WeightsType::Default);
+
+    ASSERT_FALSE(depthwise_layout());
+
+    xnnpack::ReplicableRandomDevice rng;
+    std::uniform_int_distribution<int32_t> i32dist(-10000, 10000);
+    std::uniform_int_distribution<int32_t> i8dist(
+        std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max());
+    std::uniform_int_distribution<int32_t> w8dist(
+        -std::numeric_limits<int8_t>::max(),
+        std::numeric_limits<int8_t>::max());
+
+    xnnpack::Buffer<int8_t> input(
+        std::max(batch_size() * ((input_height() * input_width() - 1) *
+                                     input_channel_stride() +
+                                 groups() * group_input_channels()),
+                 next_batch_size() *
+                     ((next_input_height() * next_input_width() - 1) *
+                          input_channel_stride() +
+                      groups() * group_input_channels())),
+        xnnpack::XnnExtraBytes);
+    xnnpack::Buffer<int8_t> kernel(groups() * group_output_channels() *
+                                       kernel_height() * kernel_width() *
+                                       group_input_channels(),
+                                   xnnpack::XnnExtraBytes);
+    xnnpack::Buffer<int32_t> bias(groups() * group_output_channels());
+    xnnpack::Buffer<int8_t> output(std::max(
+        batch_size() *
+            ((output_height() * output_width() - 1) * output_channel_stride() +
+             groups() * group_output_channels()),
+        next_batch_size() * ((next_output_height() * next_output_width() - 1) *
+                                 output_channel_stride() +
+                             groups() * group_output_channels())));
     xnnpack::Buffer<double> output_ref(batch_size() * output_height() *
                                        output_width() * groups() *
                                        group_output_channels());
@@ -3545,130 +3917,18 @@ class ConvolutionOperatorTester {
                     [&]() { return w8dist(rng); });
       std::generate(bias.begin(), bias.end(), [&]() { return i32dist(rng); });
 
-      // Compute reference results, without renormalization.
-      if (has_bias()) {
-        for (size_t i = 0; i < batch_size(); i++) {
-          for (size_t oy = 0; oy < output_height(); oy++) {
-            for (size_t ox = 0; ox < output_width(); ox++) {
-              for (size_t g = 0; g < groups(); g++) {
-                for (size_t oc = 0; oc < group_output_channels(); oc++) {
-                  accumulators[(((i * output_height() + oy) * output_width() +
-                                 ox) *
-                                    groups() +
-                                g) *
-                                   group_output_channels() +
-                               oc] = bias[g * group_output_channels() + oc];
-                }
-              }
-            }
-          }
-        }
-      } else {
-        std::fill(accumulators.begin(), accumulators.end(), 0);
-      }
-      for (size_t i = 0; i < batch_size(); i++) {
-        for (size_t oy = 0; oy < output_height(); oy++) {
-          for (size_t ox = 0; ox < output_width(); ox++) {
-            for (size_t ky = 0; ky < kernel_height(); ky++) {
-              const size_t iy = oy * subsampling_height() +
-                                ky * dilation_height() - padding_top();
-              if (iy < input_height()) {
-                for (size_t kx = 0; kx < kernel_width(); kx++) {
-                  const size_t ix = ox * subsampling_width() +
-                                    kx * dilation_width() - padding_left();
-                  if (ix < input_width()) {
-                    for (size_t g = 0; g < groups(); g++) {
-                      for (size_t oc = 0; oc < group_output_channels(); oc++) {
-                        for (size_t ic = 0; ic < group_input_channels(); ic++) {
-                          accumulators[(((i * output_height() + oy) *
-                                             output_width() +
-                                         ox) *
-                                            groups() +
-                                        g) *
-                                           group_output_channels() +
-                                       oc] +=
-                              (int32_t(input[((i * input_height() + iy) *
-                                                  input_width() +
-                                              ix) *
-                                                 input_channel_stride() +
-                                             g * group_input_channels() + ic]) -
-                               int32_t(input_zero_point)) *
-                              int32_t(
-                                  kernel[(((g * group_output_channels() + oc) *
-                                               kernel_height() +
-                                           ky) *
-                                              kernel_width() +
-                                          kx) *
-                                             group_input_channels() +
-                                         ic]);
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Compute renormalization parameters.
-      for (size_t c = 0; c < groups() * group_output_channels(); c++) {
-        int32_t accumulated_min = accumulators[c];
-        int32_t accumulated_max = accumulators[c];
-        for (size_t px = 0;
-             px < batch_size() * output_height() * output_width(); px++) {
-          accumulated_min = std::min(
-              accumulated_min,
-              accumulators[px * groups() * group_output_channels() + c]);
-          accumulated_max = std::max(
-              accumulated_max,
-              accumulators[px * groups() * group_output_channels() + c]);
-        }
-
-        float requantization_scale = 2.3283064e-10f;
-        if (accumulated_max != 0) {
-          requantization_scale =
-              std::max(requantization_scale,
-                       float(int32_t(std::numeric_limits<int8_t>::max()) -
-                             int32_t(output_zero_point)) /
-                           float(accumulated_max));
-        }
-        if (accumulated_min != 0) {
-          requantization_scale =
-              std::max(requantization_scale,
-                       float(int32_t(std::numeric_limits<int8_t>::min()) -
-                             int32_t(output_zero_point)) /
-                           float(accumulated_min));
-        }
-        requantization_scale = std::min(requantization_scale, 1.0f - 1e-6f);
-
-        requantization_scales[c] = requantization_scale;
-      }
-
-      // Renormalize reference results.
-      for (size_t c = 0; c < groups() * group_output_channels(); c++) {
-        for (size_t px = 0;
-             px < batch_size() * output_height() * output_width(); px++) {
-          output_ref[px * groups() * group_output_channels() + c] =
-              double(int32_t(output_zero_point)) +
-              double(
-                  accumulators[px * groups() * group_output_channels() + c]) *
-                  double(requantization_scales[c]);
-        }
-      }
-      std::transform(output_ref.cbegin(), output_ref.cend(), output_ref.begin(),
-                     [this](double x) -> double {
-                       return std::max<double>(
-                           std::min<double>(x, double(qmax() - 0x80)),
-                           double(qmin() - 0x80));
-                     });
+      ComputeReferenceResultxQC8(
+          input, kernel, bias, input_zero_point, output_zero_point,
+          batch_size(), input_height(), input_width(), output_height(),
+          output_width(), output_ref, requantization_scales,
+          /*recompute_scales=*/true);
 
       // Create, setup, and run Convolution operator once.
       ASSERT_EQ(xnn_status_success, xnn_initialize(nullptr /* allocator */));
       xnn_operator_t convolution_op = nullptr;
+      uint32_t flags = XNN_FLAG_INLINE_LHS_PACKING;
 
-      xnn_status status = xnn_create_convolution2d_nhwc_qs8_qc8w(
+      xnn_status status = xnn_create_convolution2d_nhwc_pqs8_qs8_qc8w(
           padding_top(), padding_right(), padding_bottom(), padding_left(),
           kernel_height(), kernel_width(), subsampling_height(),
           subsampling_width(), dilation_height(), dilation_width(), groups(),
@@ -3676,8 +3936,8 @@ class ConvolutionOperatorTester {
           input_channel_stride(), output_channel_stride(), input_zero_point,
           1.0f /* input scale */, requantization_scales.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_zero_point,
-          1.0f /* output scale */, int8_t(qmin() - 0x80), int8_t(qmax() - 0x80),
-          0, nullptr, nullptr, &convolution_op);
+          1.0f /* output scale */, static_cast<int8_t>(qmin() - 0x80),
+          static_cast<int8_t>(qmax() - 0x80), flags, nullptr, &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -3689,128 +3949,127 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
-                xnn_reshape_convolution2d_nhwc_qs8_qc8w(
+                xnn_reshape_convolution2d_nhwc_pqs8_qs8_qc8w(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
       std::iota(workspace.begin(), workspace.end(), 0);
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
-      ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
+      ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_pqs8_qs8_qc8w(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(convolution_op, auto_threadpool.get()));
 
       // Verify results of the first run.
-      for (size_t i = 0; i < batch_size(); i++) {
-        for (size_t y = 0; y < output_height(); y++) {
-          for (size_t x = 0; x < output_width(); x++) {
-            for (size_t g = 0; g < groups(); g++) {
-              for (size_t c = 0; c < group_output_channels(); c++) {
-                EXPECT_LE(
-                    int32_t(output[((i * output_height() + y) * output_width() +
-                                    x) *
-                                       output_channel_stride() +
-                                   g * group_output_channels() + c]),
-                    int32_t(qmax() - 0x80))
-                    << "(x, y) = (" << x << ", " << y << "), group = " << g
-                    << ", channel = " << c;
-                EXPECT_GE(
-                    int32_t(output[((i * output_height() + y) * output_width() +
-                                    x) *
-                                       output_channel_stride() +
-                                   g * group_output_channels() + c]),
-                    int32_t(qmin() - 0x80))
-                    << "(x, y) = (" << x << ", " << y << "), group = " << g
-                    << ", channel = " << c;
-                ASSERT_NEAR(
-                    output_ref[(((i * output_height() + y) * output_width() +
-                                 x) *
-                                    groups() +
-                                g) *
-                                   group_output_channels() +
-                               c],
-                    double(output[((i * output_height() + y) * output_width() +
-                                   x) *
-                                      output_channel_stride() +
-                                  g * group_output_channels() + c]),
-                    0.9)
-                    << "(x, y) = (" << x << ", " << y << "), group = " << g
-                    << ", channel = " << c;
-              }
-            }
-          }
-        }
-      }
+      VerifyNHWCxQC8(batch_size(), output_height(), output_width(), output,
+                     output_ref);
 
       // Re-generate data for the second run.
       std::generate(input.begin(), input.end(), [&]() { return i8dist(rng); });
 
       // Compute reference results for the second run, including
       // renormalization.
-      if (has_bias()) {
-        for (size_t i = 0; i < next_batch_size(); i++) {
-          for (size_t oy = 0; oy < next_output_height(); oy++) {
-            for (size_t ox = 0; ox < next_output_width(); ox++) {
-              for (size_t g = 0; g < groups(); g++) {
-                for (size_t oc = 0; oc < group_output_channels(); oc++) {
-                  next_accumulators[(((i * next_output_height() + oy) *
-                                          next_output_width() +
-                                      ox) *
-                                         groups() +
-                                     g) *
-                                        group_output_channels() +
-                                    oc] =
-                      bias[g * group_output_channels() + oc];
-                }
+      ComputeReferenceResultxQC8(input, kernel, bias, input_zero_point,
+                                 output_zero_point, next_batch_size(),
+                                 next_input_height(), next_input_width(),
+                                 next_output_height(), next_output_width(),
+                                 next_output_ref, requantization_scales,
+                                 /*recompute_scales=*/false);
+
+      // Setup and run Convolution operator the second time, and destroy the
+      // operator.
+      workspace_size = SIZE_MAX;
+      ASSERT_EQ(xnn_status_success,
+                xnn_reshape_convolution2d_nhwc_pqs8_qs8_qc8w(
+                    convolution_op, next_batch_size(), next_input_height(),
+                    next_input_width(), &workspace_size,
+                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
+                    auto_threadpool.get()));
+      ASSERT_NE(workspace_size, SIZE_MAX);
+      ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_pqs8_qs8_qc8w(
+                                        convolution_op, workspace.data(),
+                                        input.data(), output.data()));
+      ASSERT_EQ(xnn_status_success,
+                xnn_run_operator(convolution_op, auto_threadpool.get()));
+
+      // Verify results of the second run.
+      VerifyNHWCxQC8(next_batch_size(), next_output_height(),
+                     next_output_width(), output, next_output_ref);
+    }
+  }
+
+  void ComputeReferenceResultxQC8(const xnnpack::Buffer<int8_t>& input,
+                                  const xnnpack::Buffer<int8_t>& kernel,
+                                  const xnnpack::Buffer<int32_t>& bias,
+                                  int8_t input_zero_point,
+                                  int8_t output_zero_point, size_t batch_size,
+                                  size_t input_height, size_t input_width,
+                                  size_t output_height, size_t output_width,
+                                  xnnpack::Buffer<double>& output_ref,
+                                  xnnpack::Buffer<float>& requantization_scales,
+                                  bool recompute_scales) const {
+    xnnpack::Buffer<int32_t> accumulators(batch_size * output_height *
+                                          output_width * groups() *
+                                          group_output_channels());
+
+    // Compute reference results, without renormalization.
+    if (has_bias()) {
+      for (size_t i = 0; i < batch_size; i++) {
+        for (size_t oy = 0; oy < output_height; oy++) {
+          for (size_t ox = 0; ox < output_width; ox++) {
+            for (size_t g = 0; g < groups(); g++) {
+              for (size_t oc = 0; oc < group_output_channels(); oc++) {
+                accumulators[(((i * output_height + oy) * output_width + ox) *
+                                  groups() +
+                              g) *
+                                 group_output_channels() +
+                             oc] = bias[g * group_output_channels() + oc];
               }
             }
           }
         }
-      } else {
-        std::fill(next_accumulators.begin(), next_accumulators.end(), 0);
       }
-      for (size_t i = 0; i < next_batch_size(); i++) {
-        for (size_t oy = 0; oy < next_output_height(); oy++) {
-          for (size_t ox = 0; ox < next_output_width(); ox++) {
-            for (size_t ky = 0; ky < kernel_height(); ky++) {
-              const size_t iy = oy * subsampling_height() +
-                                ky * dilation_height() - padding_top();
-              if (iy < next_input_height()) {
-                for (size_t kx = 0; kx < kernel_width(); kx++) {
-                  const size_t ix = ox * subsampling_width() +
-                                    kx * dilation_width() - padding_left();
-                  if (ix < next_input_width()) {
-                    for (size_t g = 0; g < groups(); g++) {
-                      for (size_t oc = 0; oc < group_output_channels(); oc++) {
-                        for (size_t ic = 0; ic < group_input_channels(); ic++) {
-                          next_accumulators[(((i * next_output_height() + oy) *
-                                                  next_output_width() +
-                                              ox) *
-                                                 groups() +
-                                             g) *
-                                                group_output_channels() +
-                                            oc] +=
-                              (int32_t(input[((i * next_input_height() + iy) *
-                                                  next_input_width() +
-                                              ix) *
-                                                 input_channel_stride() +
-                                             g * group_input_channels() + ic]) -
-                               int32_t(input_zero_point)) *
-                              int32_t(
-                                  kernel[(((g * group_output_channels() + oc) *
-                                               kernel_height() +
-                                           ky) *
-                                              kernel_width() +
-                                          kx) *
-                                             group_input_channels() +
-                                         ic]);
-                        }
+    } else {
+      std::fill(accumulators.begin(), accumulators.end(), 0);
+    }
+    for (size_t i = 0; i < batch_size; i++) {
+      for (size_t oy = 0; oy < output_height; oy++) {
+        for (size_t ox = 0; ox < output_width; ox++) {
+          for (size_t ky = 0; ky < kernel_height(); ky++) {
+            const size_t iy = oy * subsampling_height() +
+                              ky * dilation_height() - padding_top();
+            if (iy < input_height) {
+              for (size_t kx = 0; kx < kernel_width(); kx++) {
+                const size_t ix = ox * subsampling_width() +
+                                  kx * dilation_width() - padding_left();
+                if (ix < input_width) {
+                  for (size_t g = 0; g < groups(); g++) {
+                    for (size_t oc = 0; oc < group_output_channels(); oc++) {
+                      for (size_t ic = 0; ic < group_input_channels(); ic++) {
+                        accumulators[(((i * output_height + oy) * output_width +
+                                       ox) *
+                                          groups() +
+                                      g) *
+                                         group_output_channels() +
+                                     oc] +=
+                            (static_cast<int32_t>(
+                                 input[((i * input_height + iy) * input_width +
+                                        ix) *
+                                           input_channel_stride() +
+                                       g * group_input_channels() + ic]) -
+                             static_cast<int32_t>(input_zero_point)) *
+                            static_cast<int32_t>(
+                                kernel[(((g * group_output_channels() + oc) *
+                                             kernel_height() +
+                                         ky) *
+                                            kernel_width() +
+                                        kx) *
+                                           group_input_channels() +
+                                       ic]);
                       }
                     }
                   }
@@ -3820,85 +4079,64 @@ class ConvolutionOperatorTester {
           }
         }
       }
+    }
+
+    // Compute renormalization parameters.
+    if (recompute_scales) {
       for (size_t c = 0; c < groups() * group_output_channels(); c++) {
-        for (size_t px = 0; px < next_batch_size() * next_output_height() *
-                                     next_output_width();
+        int32_t accumulated_min = accumulators[c];
+        int32_t accumulated_max = accumulators[c];
+        for (size_t px = 0; px < batch_size * output_height * output_width;
              px++) {
-          next_output_ref[px * groups() * group_output_channels() + c] =
-              double(int32_t(output_zero_point)) +
-              double(next_accumulators[px * groups() * group_output_channels() +
-                                       c]) *
-                  double(requantization_scales[c]);
+          accumulated_min = std::min(
+              accumulated_min,
+              accumulators[px * groups() * group_output_channels() + c]);
+          accumulated_max = std::max(
+              accumulated_max,
+              accumulators[px * groups() * group_output_channels() + c]);
         }
-      }
-      std::transform(next_output_ref.cbegin(), next_output_ref.cend(),
-                     next_output_ref.begin(), [this](double x) -> double {
-                       return std::max<double>(
-                           std::min<double>(x, double(qmax() - 0x80)),
-                           double(qmin() - 0x80));
-                     });
 
-      // Setup and run Convolution operator the second time, and destroy the
-      // operator.
-      workspace_size = SIZE_MAX;
-      workspace_alignment = SIZE_MAX;
-      ASSERT_EQ(xnn_status_success,
-                xnn_reshape_convolution2d_nhwc_qs8_qc8w(
-                    convolution_op, next_batch_size(), next_input_height(),
-                    next_input_width(), &workspace_size, &workspace_alignment,
-                    /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
-                    auto_threadpool.get()));
-      ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
-      ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8_qc8w(
-                                        convolution_op, workspace.data(),
-                                        input.data(), output.data()));
-      ASSERT_EQ(xnn_status_success,
-                xnn_run_operator(convolution_op, auto_threadpool.get()));
-
-      // Verify results of the second run.
-      for (size_t i = 0; i < next_batch_size(); i++) {
-        for (size_t y = 0; y < next_output_height(); y++) {
-          for (size_t x = 0; x < next_output_width(); x++) {
-            for (size_t g = 0; g < groups(); g++) {
-              for (size_t c = 0; c < group_output_channels(); c++) {
-                EXPECT_LE(int32_t(output[((i * next_output_height() + y) *
-                                              next_output_width() +
-                                          x) *
-                                             output_channel_stride() +
-                                         g * group_output_channels() + c]),
-                          int32_t(qmax() - 0x80))
-                    << "(x, y) = (" << x << ", " << y << "), group = " << g
-                    << ", channel = " << c;
-                EXPECT_GE(int32_t(output[((i * next_output_height() + y) *
-                                              next_output_width() +
-                                          x) *
-                                             output_channel_stride() +
-                                         g * group_output_channels() + c]),
-                          int32_t(qmin() - 0x80))
-                    << "(x, y) = (" << x << ", " << y << "), group = " << g
-                    << ", channel = " << c;
-                ASSERT_NEAR(next_output_ref[(((i * next_output_height() + y) *
-                                                  next_output_width() +
-                                              x) *
-                                                 groups() +
-                                             g) *
-                                                group_output_channels() +
-                                            c],
-                            double(output[((i * next_output_height() + y) *
-                                               next_output_width() +
-                                           x) *
-                                              output_channel_stride() +
-                                          g * group_output_channels() + c]),
-                            0.9)
-                    << "(x, y) = (" << x << ", " << y << "), group = " << g
-                    << ", channel = " << c;
-              }
-            }
-          }
+        float requantization_scale = 2.3283064e-10f;
+        if (accumulated_max != 0) {
+          requantization_scale = std::max(
+              requantization_scale,
+              static_cast<float>(
+                  static_cast<int32_t>(std::numeric_limits<int8_t>::max()) -
+                  static_cast<int32_t>(output_zero_point)) /
+                  static_cast<float>(accumulated_max));
         }
+        if (accumulated_min != 0) {
+          requantization_scale = std::max(
+              requantization_scale,
+              static_cast<float>(
+                  static_cast<int32_t>(std::numeric_limits<int8_t>::min()) -
+                  static_cast<int32_t>(output_zero_point)) /
+                  static_cast<float>(accumulated_min));
+        }
+        requantization_scale = std::min(requantization_scale, 1.0f - 1e-6f);
+
+        requantization_scales[c] = requantization_scale;
       }
     }
+
+    // Renormalize reference results.
+    for (size_t c = 0; c < groups() * group_output_channels(); c++) {
+      for (size_t px = 0; px < batch_size * output_height * output_width;
+           px++) {
+        output_ref[px * groups() * group_output_channels() + c] =
+            static_cast<double>(static_cast<int32_t>(output_zero_point)) +
+            static_cast<double>(
+                accumulators[px * groups() * group_output_channels() + c]) *
+                static_cast<double>(requantization_scales[c]);
+      }
+    }
+    std::transform(
+        output_ref.cbegin(), output_ref.cend(), output_ref.begin(),
+        [this](double x) -> double {
+          return std::max<double>(
+              std::min<double>(x, static_cast<double>(qmax() - 0x80)),
+              static_cast<double>(qmin() - 0x80));
+        });
   }
 
   void TestSetupNHWCxQS8() const {
@@ -4071,7 +4309,7 @@ class ConvolutionOperatorTester {
           input_channel_stride(), output_channel_stride(), input_zero_point,
           1.0f /* input scale */, 1.0f /* kernel scale */, kernel.data(),
           has_bias() ? bias.data() : nullptr, output_zero_point, output_scale,
-          int8_t(qmin() - 0x80), int8_t(qmax() - 0x80), 0, nullptr, nullptr,
+          int8_t(qmin() - 0x80), int8_t(qmax() - 0x80), 0, nullptr,
           &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -4084,17 +4322,15 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qs8(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
       std::iota(workspace.begin(), workspace.end(), 0);
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -4227,17 +4463,15 @@ class ConvolutionOperatorTester {
           });
 
       workspace_size = SIZE_MAX;
-      workspace_alignment = SIZE_MAX;
       // Setup and run Convolution operator the second time, and destroy the
       // operator.
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qs8(
                     convolution_op, next_batch_size(), next_input_height(),
-                    next_input_width(), &workspace_size, &workspace_alignment,
+                    next_input_width(), &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qs8(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -4460,7 +4694,7 @@ class ConvolutionOperatorTester {
           input_channel_stride(), output_channel_stride(), input_zero_point,
           1.0f /* input scale */, kernel_zero_point, 1.0f /* kernel scale */,
           kernel.data(), has_bias() ? bias.data() : nullptr, output_zero_point,
-          output_scale, qmin(), qmax(), 0, nullptr, nullptr, &convolution_op);
+          output_scale, qmin(), qmax(), 0, nullptr, &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -4472,17 +4706,15 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qu8(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
       std::iota(workspace.begin(), workspace.end(), 0);
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qu8(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -4616,17 +4848,15 @@ class ConvolutionOperatorTester {
           });
 
       workspace_size = SIZE_MAX;
-      workspace_alignment = SIZE_MAX;
       // Setup and run Convolution operator the second time, and destroy the
       // operator.
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_qu8(
                     convolution_op, next_batch_size(), next_input_height(),
-                    next_input_width(), &workspace_size, &workspace_alignment,
+                    next_input_width(), &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_qu8(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -4828,7 +5058,7 @@ class ConvolutionOperatorTester {
           group_input_channels(), group_output_channels(),
           input_channel_stride(), output_channel_stride(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max, 0,
-          nullptr, nullptr, &convolution_op);
+          nullptr, &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -4840,17 +5070,15 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_f16(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
       std::iota(workspace.begin(), workspace.end(), 0);
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f16(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -4934,17 +5162,15 @@ class ConvolutionOperatorTester {
       }
 
       workspace_size = SIZE_MAX;
-      workspace_alignment = SIZE_MAX;
       // Setup and run Convolution operator the second time, and destroy the
       // operator.
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_f16(
                     convolution_op, next_batch_size(), next_input_height(),
-                    next_input_width(), &workspace_size, &workspace_alignment,
+                    next_input_width(), &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f16(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -5104,7 +5330,7 @@ class ConvolutionOperatorTester {
           group_input_channels(), group_output_channels(),
           input_channel_stride(), output_channel_stride(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max, 0,
-          nullptr, nullptr, &convolution_op);
+          nullptr, &convolution_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -5116,17 +5342,15 @@ class ConvolutionOperatorTester {
           auto_convolution_op(convolution_op, xnn_delete_operator);
 
       size_t workspace_size = SIZE_MAX;
-      size_t workspace_alignment = SIZE_MAX;
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_f32(
                     convolution_op, batch_size(), input_height(), input_width(),
-                    &workspace_size, &workspace_alignment,
+                    &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> workspace(workspace_size);
       std::iota(workspace.begin(), workspace.end(), 0);
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f32(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -5251,17 +5475,15 @@ class ConvolutionOperatorTester {
       }
 
       workspace_size = SIZE_MAX;
-      workspace_alignment = SIZE_MAX;
       // Setup and run Convolution operator the second time, and destroy the
       // operator.
       ASSERT_EQ(xnn_status_success,
                 xnn_reshape_convolution2d_nhwc_f32(
                     convolution_op, next_batch_size(), next_input_height(),
-                    next_input_width(), &workspace_size, &workspace_alignment,
+                    next_input_width(), &workspace_size,
                     /*output_height_out=*/nullptr, /*output_width_out=*/nullptr,
                     auto_threadpool.get()));
       ASSERT_NE(workspace_size, SIZE_MAX);
-      ASSERT_NE(workspace_alignment, SIZE_MAX);
       ASSERT_EQ(xnn_status_success, xnn_setup_convolution2d_nhwc_f32(
                                         convolution_op, workspace.data(),
                                         input.data(), output.data()));
@@ -5375,7 +5597,8 @@ class ConvolutionOperatorTester {
   bool has_bias_{true};
   WeightsType weights_type_{WeightsType::Default};
   bool multithreaded_{false};
-  size_t iterations_{1};
   bool use_weights_cache_{false};
   bool transient_indirection_buffer_{false};
 };
+
+#endif  // XNNPACK_TEST_OPERATORS_CONVOLUTION_OPERATOR_TESTER_H_

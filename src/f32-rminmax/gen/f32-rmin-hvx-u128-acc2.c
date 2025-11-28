@@ -9,18 +9,34 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "src/xnnpack/common.h"
+#include "src/xnnpack/microparams.h"
 #include "src/xnnpack/reduce.h"
-
 #include "src/xnnpack/simd/f32-hvx.h"
 
+
+static XNN_INLINE void load_tail_reduce_minmax_f32(
+  float* min, xnn_simd_f32_t vmin,
+  const float* input, size_t num_elements
+) {
+  assert(num_elements < xnn_simd_size_f32);
+  if XNN_UNLIKELY(num_elements) {
+    const xnn_simd_f32_t vt = xnn_load_tail_f32(input, num_elements >> XNN_LOG2_SIZEOF_FLOAT);
+    HVX_VectorPred mask = Q6_Q_vsetq_R(num_elements);
+
+    vmin = xnn_min_f32(vmin, Q6_V_vmux_QVV(mask, vt, vmin));
+  }
+  *min = xnn_reduce_min_f32(vmin);
+}
 
 void xnn_f32_rmin_ukernel__hvx_u128_acc2(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_default_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -49,14 +65,9 @@ void xnn_f32_rmin_ukernel__hvx_u128_acc2(
     vmin0 = xnn_min_f32(vmin0, vt);
   }
 
-  if XNN_UNLIKELY(batch) {
-    const xnn_simd_f32_t vt = xnn_load_tail_f32(input, batch >> XNN_LOG2_SIZEOF_FLOAT);
-    HVX_VectorPred mask = Q6_Q_vsetq_R(batch);
+  load_tail_reduce_minmax_f32(
+    &output[0], vmin0,
+    input, batch >> XNN_LOG2_SIZEOF_FLOAT
+  );
 
-    vmin0 = xnn_min_f32(vmin0, Q6_V_vmux_QVV(mask, vt, vmin0));
-  }
-
-  const float vmin = xnn_reduce_min_f32(vmin0);
-
-  output[0] = vmin;
 }

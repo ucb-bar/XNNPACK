@@ -3,8 +3,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#ifndef THIRD_PARTY_XNNPACK_BENCH_MODELS_MODELS_H_
-#define THIRD_PARTY_XNNPACK_BENCH_MODELS_MODELS_H_
+#ifndef XNNPACK_BENCH_MODELS_MODELS_H_
+#define XNNPACK_BENCH_MODELS_MODELS_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -50,6 +50,9 @@ xnn_subgraph_t FP32Elementwise(size_t batch_size, size_t num_elements,
 // `norm_mask`.
 xnn_subgraph_t FP32LayerNorm(size_t m, size_t n, size_t k, uint32_t norm_mask);
 
+// Similar to the above, but computes the L2 norm.
+xnn_subgraph_t FP32L2Norm(size_t m, size_t n, size_t k, uint32_t norm_mask);
+
 // Similar to the above, but computes the softmax instead of the layer norm.
 // If `use_softmax` is `false`, a "decomposed" subgraph which computes the
 // softmax using unary and binary elementwise ops and reduction ops, is used,
@@ -71,6 +74,14 @@ xnn_subgraph_t FP32DepthwiseSeparable(size_t w, size_t h, size_t kw, size_t ci,
                                       size_t co,
                                       FP32DepthwiseSeparableWeights& weights);
 
+// Creates a single Gemma3-like Transformer block.
+xnn_subgraph_t QD8TransformerBlock(size_t batch_size, size_t sequence_length,
+                                   size_t embedding_dim, size_t num_heads,
+                                   size_t head_dim, size_t hidden_dim);
+xnn_subgraph_t FP32TransformerBlock(size_t batch_size, size_t sequence_length,
+                                    size_t embedding_dim, size_t num_heads,
+                                    size_t head_dim, size_t hidden_dim);
+
 }  // namespace models
 
-#endif  // THIRD_PARTY_XNNPACK_BENCH_MODELS_MODELS_H_
+#endif  // XNNPACK_BENCH_MODELS_MODELS_H_

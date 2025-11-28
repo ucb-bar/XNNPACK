@@ -93,7 +93,7 @@ void xnnpack_convolution_qu8(benchmark::State& state, const char* net) {
       kernel_width, subsampling, subsampling, dilation, dilation, groups,
       group_input_channels, group_output_channels, input_pixel_stride,
       output_pixel_stride, 127, 0.5f, 127, 0.5f, kernel.data(), bias.data(),
-      127, 0.5f, 0, 255, 0 /* flags */, nullptr, nullptr, &convolution_op);
+      127, 0.5f, 0, 255, 0 /* flags */, nullptr, &convolution_op);
   if (status != xnn_status_success) {
     state.SkipWithError("failed to create QUINT8 Convolution operator");
     return;
@@ -102,10 +102,8 @@ void xnnpack_convolution_qu8(benchmark::State& state, const char* net) {
   pthreadpool_t threadpool = pthreadpool_create(FLAGS_num_threads);
 
   size_t workspace_size = 0;
-  size_t workspace_alignment = 0;
   status = xnn_reshape_convolution2d_nhwc_qu8(
       convolution_op, batch_size, input_height, input_width, &workspace_size,
-      &workspace_alignment,
       /*output_height_out=*/nullptr, /*output_width_out=*/nullptr, threadpool);
 
   if (status != xnn_status_success) {
@@ -215,7 +213,7 @@ void xnnpack_convolution_qs8(benchmark::State& state, const char* net) {
       kernel_width, subsampling, subsampling, dilation, dilation, groups,
       group_input_channels, group_output_channels, input_pixel_stride,
       output_pixel_stride, 127, 0.5f, 0.5f, kernel.data(), bias.data(), 127,
-      0.5f, -128, 127, 0 /* flags */, nullptr, nullptr, &convolution_op);
+      0.5f, -128, 127, 0 /* flags */, nullptr, &convolution_op);
   if (status != xnn_status_success) {
     state.SkipWithError("failed to create QINT8 Convolution operator");
     return;
@@ -224,10 +222,8 @@ void xnnpack_convolution_qs8(benchmark::State& state, const char* net) {
   pthreadpool_t threadpool = pthreadpool_create(FLAGS_num_threads);
 
   size_t workspace_size = 0;
-  size_t workspace_alignment = 0;
   status = xnn_reshape_convolution2d_nhwc_qs8(
       convolution_op, batch_size, input_height, input_width, &workspace_size,
-      &workspace_alignment,
       /*output_height_out=*/nullptr, /*output_width_out=*/nullptr, threadpool);
 
   if (status != xnn_status_success) {
@@ -337,7 +333,7 @@ void xnnpack_convolution_f16(benchmark::State& state, const char* net) {
       group_input_channels, group_output_channels, input_pixel_stride,
       output_pixel_stride, kernel.data(), bias.data(),
       -std::numeric_limits<float>::infinity(),
-      +std::numeric_limits<float>::infinity(), 0 /* flags */, nullptr, nullptr,
+      +std::numeric_limits<float>::infinity(), 0 /* flags */, nullptr,
       &convolution_op);
   if (status != xnn_status_success) {
     state.SkipWithError("failed to create FP16 Convolution operator");
@@ -347,10 +343,8 @@ void xnnpack_convolution_f16(benchmark::State& state, const char* net) {
   pthreadpool_t threadpool = pthreadpool_create(FLAGS_num_threads);
 
   size_t workspace_size = 0;
-  size_t workspace_alignment = 0;
   status = xnn_reshape_convolution2d_nhwc_f16(
       convolution_op, batch_size, input_height, input_width, &workspace_size,
-      &workspace_alignment,
       /*output_height_out=*/nullptr, /*output_width_out=*/nullptr, threadpool);
 
   if (status != xnn_status_success) {
@@ -460,7 +454,7 @@ void xnnpack_convolution_f32(benchmark::State& state, const char* net) {
       group_input_channels, group_output_channels, input_pixel_stride,
       output_pixel_stride, kernel.data(), bias.data(),
       -std::numeric_limits<float>::infinity(),
-      +std::numeric_limits<float>::infinity(), 0 /* flags */, nullptr, nullptr,
+      +std::numeric_limits<float>::infinity(), 0 /* flags */, nullptr,
       &convolution_op);
   if (status != xnn_status_success) {
     state.SkipWithError("failed to create FP32 Convolution operator");
@@ -470,10 +464,8 @@ void xnnpack_convolution_f32(benchmark::State& state, const char* net) {
   pthreadpool_t threadpool = pthreadpool_create(FLAGS_num_threads);
 
   size_t workspace_size = 0;
-  size_t workspace_alignment = 0;
   status = xnn_reshape_convolution2d_nhwc_f32(
       convolution_op, batch_size, input_height, input_width, &workspace_size,
-      &workspace_alignment,
       /*output_height_out=*/nullptr, /*output_width_out=*/nullptr, threadpool);
 
   if (status != xnn_status_success) {

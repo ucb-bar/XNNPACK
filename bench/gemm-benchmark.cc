@@ -3,6 +3,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include "bench/gemm-benchmark.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -32,8 +34,8 @@
 void GEMMBenchmark(benchmark::State& state, xnn_qs8_gemm_minmax_ukernel_fn gemm,
                    xnn_init_qs8_conv_minmax_params_fn init_params,
                    xnn_pack_qs8_gemm_fn pack, size_t mr, size_t nr, size_t kr,
-                   size_t sr, benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -119,8 +121,8 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_qs8_qc8w_gemm_minmax_ukernel_fn gemm,
                    xnn_init_qs8_qc8w_conv_minmax_params_fn init_params,
                    xnn_pack_qs8_gemm_fn pack, size_t mr, size_t nr, size_t kr,
-                   size_t sr, benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -202,11 +204,96 @@ void GEMMBenchmark(benchmark::State& state,
 }
 
 void GEMMBenchmark(benchmark::State& state,
+                   xnn_qs8_qc4w_gemm_minmax_ukernel_fn gemm,
+                   xnn_init_qs8_qc8w_conv_minmax_params_fn init_params,
+                   xnn_pack_qs8_qc4w_gemm_fn pack, size_t mr, size_t nr, size_t kr,
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
+    return;
+  }
+
+  const size_t mc = state.range(0);
+  const size_t nc = state.range(1);
+  const size_t kc = state.range(2);
+
+  const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
+  const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr) / 2;
+
+  std::random_device random_device;
+  auto rng = std::mt19937(random_device());
+  auto i32rng = std::bind(std::uniform_int_distribution<int32_t>(-10000, 10000),
+                          std::ref(rng));
+
+  xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
+  xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
+  xnnpack::Buffer<uint8_t> k(nc * kc / 2);
+  xnnpack::fill_uniform_random_bits(k.data(), k.size(), rng);
+  xnnpack::Buffer<int32_t> b(nc);
+  std::generate(b.begin(), b.end(), std::ref(i32rng));
+
+  const size_t w_size = nc_stride * (sizeof(float) + sizeof(int32_t)) +
+                        kc_stride * nc_stride;
+  const size_t c_elements = mc * nc;
+  const size_t num_buffers = 1 + benchmark::utils::DivideRoundUp<size_t>(
+                                     benchmark::utils::GetMaxCacheSize(),
+                                     w_size + c_elements * sizeof(int8_t));
+
+  xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> w(w_size * num_buffers);
+
+  const xnn_qs8_qc4w_packing_params packing_params = {int8_t(127 - 0x80)};
+  pack(/*g=*/1, nc, kc, nr, kr, sr, k.data(), b.data(), /*scale=*/nullptr,
+       w.data(), nr * sizeof(float), &packing_params);
+
+  xnnpack::Buffer<int8_t> c(c_elements * num_buffers);
+
+  union xnn_qs8_qc8w_conv_minmax_params quantization_params;
+  init_params(&quantization_params,
+              /*output_zero_point=*/127,
+              /*output_min=*/-127,
+              /*output_max=*/126);
+
+  size_t buffer_index = 0;
+  for (auto _ : state) {
+    // Use circular buffers (exceeding cache size) and prefetch to control cache
+    // state:
+    // - A is always in L1 cache (if fits, otherwise L2, L3, etc)
+    // - W is not in cache (for any cache level)
+    // - C is not in cache (for any cache level)
+    state.PauseTiming();
+    benchmark::utils::PrefetchToL1(a.data(), a.size() * sizeof(int8_t));
+    buffer_index = (buffer_index + 1) % num_buffers;
+    state.ResumeTiming();
+
+    for (uint32_t m = 0; m < mc; m += mr) {
+      const uint32_t mb = min(mc - m, mr);
+      for (uint32_t n = 0; n < nc; n += nr) {
+        const uint32_t nb = min(nc - n, nr);
+        gemm(mb, nb, kc * sizeof(int8_t), a.data() + m * kc,
+             kc * sizeof(int8_t),
+             w.data() + w_size * buffer_index +
+                 n * (kc_stride + sizeof(int32_t)),
+             c.data() + (mc * buffer_index + m) * nc + n, nc * sizeof(int8_t),
+             nr * sizeof(int8_t), &quantization_params);
+      }
+    }
+  }
+
+  const uint64_t cpu_frequency = benchmark::utils::GetCurrentCpuFrequency();
+  if (cpu_frequency != 0) {
+    state.counters["cpufreq"] = cpu_frequency;
+  }
+
+  state.counters["OPS"] =
+      benchmark::Counter(uint64_t(state.iterations()) * 2 * mc * nc * kc,
+                         benchmark::Counter::kIsRate);
+}
+
+void GEMMBenchmark(benchmark::State& state,
                    xnn_qd8_f16_qc8w_gemm_ukernel_fn gemm,
                    xnn_init_f16_minmax_params_fn init_params,
                    xnn_pack_qs8_gemm_fn pack, size_t mr, size_t nr, size_t kr,
-                   size_t sr, benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -262,7 +349,7 @@ void GEMMBenchmark(benchmark::State& state,
 
     for (uint32_t m = 0; m < mc; m += mr) {
       const uint32_t mb = min(mc - m, mr);
-      gemm(mb, nc, kc, a.data() + m * kc, kc * sizeof(int8_t),
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
            w.data() + w_elements * buffer_index,
            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(xnn_float16),
            nr * sizeof(xnn_float16), &params, quantization_params.data() + m);
@@ -283,8 +370,8 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_qd8_f32_qc8w_gemm_ukernel_fn gemm,
                    xnn_init_f32_minmax_params_fn init_params,
                    xnn_pack_qs8_gemm_fn pack, size_t mr, size_t nr, size_t kr,
-                   size_t sr, benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -339,7 +426,7 @@ void GEMMBenchmark(benchmark::State& state,
 
     for (uint32_t m = 0; m < mc; m += mr) {
       const uint32_t mb = min(mc - m, mr);
-      gemm(mb, nc, kc, a.data() + m * kc, kc * sizeof(int8_t),
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
            w.data() + w_elements * buffer_index,
            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
            nr * sizeof(float), &params, quantization_params.data() + m);
@@ -361,8 +448,8 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_init_f16_qb4w_minmax_params_fn init_params,
                    xnn_pack_qs8_qb4w_gemm_fn pack, size_t mr, size_t nr,
                    size_t kr, size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -435,7 +522,7 @@ void GEMMBenchmark(benchmark::State& state,
 
     for (uint32_t m = 0; m < mc; m += mr) {
       const uint32_t mb = min(mc - m, mr);
-      gemm(mb, nc, kc, a.data() + m * kc, kc * sizeof(int8_t),
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
            w.data() + w_bytes * buffer_index,
            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(xnn_float16),
            nr * sizeof(xnn_float16), &params, quantization_params.data() + m);
@@ -457,8 +544,8 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_init_f16_qc4w_minmax_params_fn init_params,
                    xnn_pack_qs8_qc4w_gemm_fn pack, size_t mr, size_t nr,
                    size_t kr, size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -514,7 +601,7 @@ void GEMMBenchmark(benchmark::State& state,
 
     for (uint32_t m = 0; m < mc; m += mr) {
       const uint32_t mb = min(mc - m, mr);
-      gemm(mb, nc, kc, a.data() + m * kc, kc * sizeof(int8_t),
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
            w.data() + w_elements * buffer_index,
            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(xnn_float16),
            nr * sizeof(xnn_float16), &params, quantization_params.data() + m);
@@ -536,8 +623,8 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_init_f32_qb4w_minmax_params_fn init_params,
                    xnn_pack_qs8_qb4w_gemm_fn pack, size_t mr, size_t nr,
                    size_t kr, size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -609,7 +696,7 @@ void GEMMBenchmark(benchmark::State& state,
 
     for (uint32_t m = 0; m < mc; m += mr) {
       const uint32_t mb = min(mc - m, mr);
-      gemm(mb, nc, kc, a.data() + m * kc, kc * sizeof(int8_t),
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
            w.data() + w_bytes * buffer_index,
            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
            nr * sizeof(float), &params, quantization_params.data() + m);
@@ -631,8 +718,8 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_init_f32_qc4w_minmax_params_fn init_params,
                    xnn_pack_qs8_qc4w_gemm_fn pack, size_t mr, size_t nr,
                    size_t kr, size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -688,7 +775,7 @@ void GEMMBenchmark(benchmark::State& state,
 
     for (uint32_t m = 0; m < mc; m += mr) {
       const uint32_t mb = min(mc - m, mr);
-      gemm(mb, nc, kc, a.data() + m * kc, kc * sizeof(int8_t),
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
            w.data() + w_elements * buffer_index,
            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
            nr * sizeof(float), &params, quantization_params.data() + m);
@@ -711,8 +798,8 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_pack_weights_and_biases_fn pack_weights,
                    xnn_packed_stride_weights_and_biases_fn packed_stride,
                    size_t mr, size_t nr, size_t kr, size_t sr, size_t mr_packed,
-                   benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -799,7 +886,7 @@ void GEMMBenchmark(benchmark::State& state,
 
     for (uint32_t m = 0; m < mc; m += mr) {
       const uint32_t mb = min(mc - m, mr);
-      gemm(mb, nc, kc,
+      gemm(mb, nc, kc * sizeof(int8_t),
            input_qp8.data() +
                xnn_x8_packq_f32qp8_packed_offset(m, kc, mr, kr, sr),
            w.data() + packed_w_size * buffer_index,
@@ -818,15 +905,15 @@ void GEMMBenchmark(benchmark::State& state,
       benchmark::Counter::kIsRate);
 }
 
-#if XNN_ENABLE_KLEIDIAI
+#if XNN_ENABLE_KLEIDIAI && (XNN_ENABLE_ARM_SME2 || XNN_ENABLE_ARM_SME)
 void GEMMBenchmark(benchmark::State& state,
                    xnn_pf32_gemm_minmax_ukernel_fn gemm,
                    xnn_init_f32_minmax_params_fn init_minmax_params,
                    xnn_pack_weights_and_biases_fn pack_weights,
                    xnn_packed_stride_weights_and_biases_fn packed_stride,
                    size_t mr, size_t nr, size_t kr, size_t sr, size_t mr_packed,
-                   benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -868,10 +955,10 @@ void GEMMBenchmark(benchmark::State& state,
 
   // Pack the left-hand operand.
   const size_t input_packed_size =
-      xnn_x32_pack_lh_size__neonsme2(mc, kc, mr_packed, kr, sr);
+      xnn_x32_pack_lh_size__neonsme(mc, kc, mr_packed, kr, sr);
   xnnpack::Buffer<float, XNN_ALLOCATION_ALIGNMENT> input_packed(
       input_packed_size / sizeof(float));
-  xnn_x32_pack_lh_ukernel__neonsme2(mc, kc, mr_packed, kr, sr,
+  xnn_x32_pack_lh_ukernel__neonsme(mc, kc, mr_packed, kr, sr,
                                     /*m_idx_start=*/0, a.data(),
                                     /*lhs_stride=*/kc * sizeof(float),
                                     input_packed.data());
@@ -914,15 +1001,15 @@ void GEMMBenchmark(benchmark::State& state,
     if (mr > 1) {
       for (uint32_t m = 0; m < mc; m += mr) {
         const uint32_t mb = min(mc - m, mr);
-        gemm(mb, nc, kc,
+        gemm(mb, nc, kc * sizeof(float),
              input_packed.data() +
-                 xnn_x32_pack_lh_offset__neonsme2(m, kc, mr_packed, kr, sr),
+                 xnn_x32_pack_lh_offset__neonsme(m, kc, mr_packed, kr, sr),
              w.data() + packed_w_size / sizeof(float) * buffer_index,
              c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
              sizeof(float), &minmax_params);
       }
     } else {
-      gemm(mr, nc, kc, input_packed.data(),
+      gemm(mr, nc, kc * sizeof(float), input_packed.data(),
            w.data() + packed_w_size / sizeof(float) * buffer_index,
            c.data() + (buffer_index * mc) * nc, nc * sizeof(float),
            sizeof(float), &minmax_params);
@@ -938,7 +1025,127 @@ void GEMMBenchmark(benchmark::State& state,
       static_cast<uint64_t>(state.iterations()) * 2 * mc * nc * kc,
       benchmark::Counter::kIsRate);
 }
-#endif  // XNN_ENABLE_KLEIDIAI
+#endif //   XNN_ENABLE_KLEIDIAI && (XNN_ENABLE_ARM_SME2 || XNN_ENABLE_ARM_SME)
+
+#if XNN_ENABLE_KLEIDIAI && XNN_ENABLE_ARM_SME2
+void GEMMBenchmark(benchmark::State& state,
+                   xnn_pf16_gemm_minmax_ukernel_fn gemm,
+                   xnn_init_f16_minmax_params_fn init_minmax_params,
+                   xnn_pack_weights_and_biases_fn pack_weights,
+                   xnn_packed_stride_weights_and_biases_fn packed_stride,
+                   size_t mr, size_t nr, size_t kr, size_t sr, size_t mr_packed,
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
+    return;
+  }
+
+  const size_t mc = state.range(0);
+  const size_t nc = state.range(1);
+  const size_t kc = state.range(2);
+
+  std::random_device random_device;
+  auto rng = std::mt19937(random_device());
+  auto f32rng = std::bind(std::uniform_real_distribution<float>(-10.0f, 10.0f),
+                          std::ref(rng));
+
+  xnnpack::Buffer<xnn_float16> a(mc * kc, xnnpack::XnnExtraBytes, "a");
+  std::generate(a.begin(), a.end(), std::ref(f32rng));
+  xnnpack::Buffer<xnn_float16> b(nc * kc, /*extra_bytes=*/{0}, "b");
+  std::generate(b.begin(), b.end(), std::ref(f32rng));
+
+  // Create a fake `gemm_config` for the packing functions.
+  struct xnn_gemm_config gemm_config;
+  gemm_config.mr = static_cast<uint8_t>(mr);
+  gemm_config.mr_packed = static_cast<uint8_t>(mr_packed);
+  gemm_config.nr = static_cast<uint8_t>(nr);
+  gemm_config.log2_kr = static_cast<uint8_t>(31 - math_clz_nonzero_u32(kr));
+  gemm_config.log2_sr = static_cast<uint8_t>(31 - math_clz_nonzero_u32(sr));
+
+  const size_t packed_w_stride =
+      packed_stride(&gemm_config, kc, /*unused_block_size=*/0, /*k_stride=*/kc,
+                    /*extra_bytes=*/0);
+  const size_t packed_w_size = packed_w_stride * round_up(nc, nr);
+
+  const size_t c_elements = mc * nc;
+  const size_t num_buffers =
+      1 + benchmark::utils::DivideRoundUp<size_t>(
+              benchmark::utils::GetMaxCacheSize(),
+              packed_w_size + sizeof(float) * c_elements);
+
+  xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> w(
+      packed_w_size * num_buffers, /*extra_bytes=*/{0}, "w");
+
+  // Pack the left-hand operand.
+  const size_t input_packed_size =
+      xnn_x16_pack_lh_size__neonsme2(mc, kc, mr_packed, kr, sr);
+  xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> input_packed(
+      input_packed_size, /*extra_bytes=*/{0}, "input_packed");
+  xnn_x16_pack_lh_ukernel__neonsme2(mc, kc, mr_packed, kr, sr,
+                                    /*m_idx_start=*/0, a.data(),
+                                    /*lhs_stride=*/kc * sizeof(xnn_float16),
+                                    input_packed.data());
+
+  // RHS packing
+  pack_weights(/*flags=*/0, &gemm_config, kc, nc,
+               /*groups=*/1, /*unused_block_size=*/0, /*k_stride=*/kc,
+               /*accumulator_init=*/nullptr,
+               /*weights=*/b.data(),
+               /*int_extra_data0_fn=*/nullptr,
+               /*extra_data0=*/nullptr,
+               /*extra_data0_size=*/0,
+               /*init_extra_data1_fn=*/nullptr,
+               /*extra_data1=*/nullptr,
+               /*extra_data1_size=*/0,
+               /*packed_weights_ptr=*/w.data(), /*packing_params=*/nullptr);
+
+  xnnpack::Buffer<xnn_float16> c(c_elements * num_buffers, /*extra_bytes=*/{0},
+                                 "c");
+
+  // Prepare parameters.
+  xnn_f16_minmax_params minmax_params;
+  init_minmax_params(&minmax_params, static_cast<xnn_float16>(-INFINITY),
+                     static_cast<xnn_float16>(INFINITY));
+
+  size_t buffer_index = 0;
+  for (auto _ : state) {
+    // Use circular buffers (exceeding cache size) and prefetch to control cache
+    // state:
+    // - A is always in L1 cache (if fits, otherwise L2, L3, etc)
+    // - W is not in cache (for any cache level)
+    // - C is not in cache (for any cache level)
+    state.PauseTiming();
+    benchmark::utils::PrefetchToL1(a.data(), a.size());
+    buffer_index = (buffer_index + 1) % num_buffers;
+    state.ResumeTiming();
+
+    if (mr > 1) {
+      for (uint32_t m = 0; m < mc; m += mr) {
+        const uint32_t mb = min(mc - m, mr);
+        gemm(mb, nc, kc * sizeof(xnn_float16),
+             input_packed.data() +
+                 xnn_x16_pack_lh_offset__neonsme2(m, kc, mr_packed, kr, sr),
+             w.data() + packed_w_size * buffer_index,
+             &c[c_elements * buffer_index], nc * sizeof(xnn_float16),
+             sizeof(xnn_float16), &minmax_params);
+      }
+    } else {
+      gemm(mr, nc, kc * sizeof(xnn_float16), input_packed.data(),
+           w.data() + packed_w_size * buffer_index,
+           &c[c_elements * buffer_index], nc * sizeof(xnn_float16),
+           sizeof(xnn_float16), &minmax_params);
+    }
+  }
+
+  const uint64_t cpu_frequency = benchmark::utils::GetCurrentCpuFrequency();
+  if (cpu_frequency != 0) {
+    state.counters["cpufreq"] = cpu_frequency;
+  }
+
+  state.counters["OPS"] = benchmark::Counter(
+      static_cast<uint64_t>(state.iterations()) * 2 * mc * nc * kc,
+      benchmark::Counter::kIsRate);
+}
+#endif  // XNN_ENABLE_KLEIDIAI && XNN_ENABLE_ARM_SME2
 
 void GEMMBenchmark(benchmark::State& state,
                    xnn_qp8_f32_qb4w_gemm_minmax_ukernel_fn gemm,
@@ -946,15 +1153,15 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_pack_weights_and_biases_fn pack_weights,
                    xnn_packed_stride_weights_and_biases_fn packed_stride,
                    size_t mr, size_t nr, size_t kr, size_t sr, size_t mr_packed,
-                   benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
   const size_t mc = state.range(0);
   const size_t nc = state.range(1);
   const size_t bl = state.range(3);
-  const size_t kc = round_up(state.range(2), 2UL);
+  const size_t kc = round_up(state.range(2), bl);
 
   std::random_device random_device;
   auto rng = std::mt19937(random_device());
@@ -1063,9 +1270,8 @@ void GEMMBenchmark(benchmark::State& state,
 void GEMMBenchmark(benchmark::State& state, xnn_qu8_gemm_minmax_ukernel_fn gemm,
                    xnn_init_qu8_conv_minmax_params_fn init_params,
                    xnn_pack_qu8_gemm_fn pack, size_t mr, size_t nr, size_t kr,
-                   size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check = nullptr) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -1147,9 +1353,8 @@ void GEMMBenchmark(benchmark::State& state, xnn_qu8_gemm_minmax_ukernel_fn gemm,
 void GEMMBenchmark(benchmark::State& state, xnn_f32_gemm_minmax_ukernel_fn gemm,
                    xnn_init_f32_minmax_params_fn init_params,
                    xnn_pack_f32_gemm_fn pack, size_t mr, size_t nr, size_t kr,
-                   size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check = nullptr) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -1221,8 +1426,8 @@ void GEMMBenchmark(benchmark::State& state, xnn_f32_gemm_minmax_ukernel_fn gemm,
 void GEMMBenchmark(benchmark::State& state, xnn_f32_gemm_minmax_ukernel_fn gemm,
                    xnn_init_f32_minmax_params_fn init_params, size_t mr,
                    size_t nr, size_t kr, size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check = nullptr) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -1286,9 +1491,8 @@ void GEMMBenchmark(benchmark::State& state, xnn_f32_gemm_minmax_ukernel_fn gemm,
 void GEMMBenchmark(benchmark::State& state, xnn_f16_gemm_minmax_ukernel_fn gemm,
                    xnn_init_f16_minmax_params_fn init_params,
                    xnn_pack_f16_gemm_fn pack, size_t mr, size_t nr, size_t kr,
-                   size_t sr,
-                   benchmark::utils::IsaCheckFunction isa_check = nullptr) {
-  if (isa_check != nullptr && !isa_check(state)) {
+                   size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 

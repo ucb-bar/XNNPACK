@@ -18,22 +18,22 @@ IF(NOT TARGET benchmark)
   ENDIF()
 ENDIF()
 
-ADD_LIBRARY(bench-utils STATIC utils.cc)
-TARGET_LINK_LIBRARIES(bench-utils PRIVATE benchmark::benchmark cpuinfo pthreadpool)
-TARGET_LINK_LIBRARIES(bench-utils PRIVATE xnnpack-base hardware-config)
+ADD_LIBRARY(xnnpack-bench-utils STATIC utils.cc)
+TARGET_LINK_LIBRARIES(xnnpack-bench-utils PRIVATE benchmark::benchmark cpuinfo pthreadpool)
+TARGET_LINK_LIBRARIES(xnnpack-bench-utils PRIVATE xnnpack-base xnnpack-hardware-config)
 IF(XNNPACK_BUILD_LIBRARY)
-  TARGET_LINK_LIBRARIES(bench-utils PRIVATE logging memory)
+  TARGET_LINK_LIBRARIES(xnnpack-bench-utils PRIVATE xnnpack-logging xnnpack-memory)
 ENDIF()
 
 # Helper libraries
 ADD_LIBRARY(packq-benchmark STATIC packq-benchmark.cc)
-TARGET_LINK_LIBRARIES(packq-benchmark PRIVATE XNNPACK benchmark::benchmark bench-utils)
+TARGET_LINK_LIBRARIES(packq-benchmark PRIVATE XNNPACK benchmark::benchmark xnnpack-bench-utils)
 IF(XNNPACK_ENABLE_KLEIDIAI)
   TARGET_LINK_LIBRARIES(packq-benchmark PRIVATE kleidiai)
 ENDIF()
 
 ADD_LIBRARY(gemm-benchmark STATIC gemm-benchmark.cc)
-TARGET_LINK_LIBRARIES(gemm-benchmark PRIVATE XNNPACK benchmark::benchmark bench-utils)
+TARGET_LINK_LIBRARIES(gemm-benchmark PRIVATE XNNPACK benchmark::benchmark xnnpack-bench-utils)
 IF(XNNPACK_ENABLE_KLEIDIAI)
   TARGET_LINK_LIBRARIES(gemm-benchmark PUBLIC kleidiai)
 ENDIF()
@@ -49,24 +49,16 @@ SET(MICROKERNEL_BENCHMARKS
     f16-dwconv2d-chw
     f16-f32acc-gemm
     f16-f32acc-igemm
-    f16-f32acc-rdsum
-    f16-f32acc-rsum
     f16-gemm
     f16-gemm-minmax
     f16-igemm
     f16-raddstoreexpminusmax
-    f16-rmax
-    f16-rmin
-    f16-rminmax
-    f16-rsum
-    f16-spmm
     f32-bgemm
     f32-conv-hwc
     f32-conv-hwc2chw
     f32-dwconv
     f32-dwconv2d-chw
     f32-gemm
-    f32-gemm-goi-minmax
     f32-gemm-minmax
     f32-igemm
     f32-qc4w-gemm
@@ -74,18 +66,14 @@ SET(MICROKERNEL_BENCHMARKS
     f32-raddexpminusmax
     f32-raddextexp
     f32-raddstoreexpminusmax
-    f32-rdsum
-    f32-rmax
-    f32-rmin
-    f32-rminmax
-    f32-rsum
     f32-softmax
-    f32-spmm
     f16-vcmul
     f32-vcmul
     f32-vscaleexpminusmax
     f32-vscaleextexp
+    pf16-gemm-minmax
     pf32-gemm-minmax
+    qb4-packw
     qd8-f16-qb4w-gemm
     qd8-f16-qc4w-gemm
     qd8-f16-qc8w-gemm
@@ -97,14 +85,16 @@ SET(MICROKERNEL_BENCHMARKS
     qp8-f32-qb4w-gemm
     qs8-dwconv
     qs8-gemm
+    qs8-qc4w-gemm-fp32
     qs8-qc8w-gemm-fp32
-    qs8-rdsum
-    qu8-rdsum
-    qs8-rsum
-    qu8-rsum
     qu8-gemm
     qu8-gemm-fp32
     qu8-gemm-rndnu
+    rdminmax
+    rdsum
+    rminmax
+    rsum
+    spmm
     x16-packw
     x32-packw
     x8-lut
@@ -122,15 +112,15 @@ FOREACH(BENCH ${MICROKERNEL_BENCHMARKS})
     TARGET_COMPILE_OPTIONS(${BENCH}-bench PRIVATE "-Os")
   ENDIF()
   TARGET_LINK_LIBRARIES(${BENCH}-bench PRIVATE
-    bench-utils
+    xnnpack-bench-utils
     benchmark::benchmark
     gemm-benchmark
-    hardware-config
-    indirection
-    logging
-    microkernels-all
-    microparams-init
-    packing
+    xnnpack-hardware-config
+    xnnpack-indirection
+    xnnpack-logging
+    xnnpack-microkernels-all
+    xnnpack-microparams-init
+    xnnpack-packing
     packq-benchmark
     pthreadpool)
   SET_TARGET_PROPERTIES(${BENCH}-bench PROPERTIES CXX_EXTENSIONS YES)

@@ -3,10 +3,11 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#ifndef __XNNPACK_TEST_BUFFER_H_
-#define __XNNPACK_TEST_BUFFER_H_
+#ifndef XNNPACK_TEST_BUFFER_H_
+#define XNNPACK_TEST_BUFFER_H_
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -21,6 +22,7 @@
 #include <numeric>
 #include <random>
 #include <sstream>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -28,6 +30,7 @@
 #include "include/xnnpack.h"
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/datatype.h"
+#include "src/xnnpack/log.h"
 #include "src/xnnpack/math.h"
 #include "src/xnnpack/reference-utils.h"
 
@@ -158,68 +161,6 @@ static constexpr PaddingBytes XnnExtraBytes = {XNN_EXTRA_BYTES};
 template <typename T, size_t Alignment = alignof(T)>
 class Buffer {
   static_assert(std::is_trivial<T>::value, "");
-  T* data_;
-  size_t size_;
-
-  static void* allocate(size_t bytes) {
-    size_t alignment = std::max(Alignment, sizeof(void*));
-#if defined(_WIN32)
-    void* memory = nullptr;
-    memory = _aligned_malloc(bytes, alignment);
-    if (memory == 0) {
-#if !defined(__GNUC__) && !defined(_MSC_VER) || defined(__EXCEPTIONS) || \
-    defined(_CPPUNWIND)
-      throw std::bad_alloc();
-#endif
-    }
-#elif defined(__ANDROID__) || defined(__CYGWIN__)
-    void* memory = memalign(alignment, bytes);
-    if (memory == 0) {
-#if !defined(__GNUC__) || defined(__EXCEPTIONS)
-      throw std::bad_alloc();
-#endif
-    }
-#else
-    void* memory = nullptr;
-    if (posix_memalign(&memory, alignment, bytes) != 0) {
-#if !defined(__GNUC__) || defined(__EXCEPTIONS)
-      throw std::bad_alloc();
-#endif
-    }
-#endif
-    return reinterpret_cast<T*>(memory);
-  }
-
-  static void free(void* p) {
-#if defined(_WIN32)
-    _aligned_free(p);
-#else
-    ::free(p);
-#endif
-  }
-
-  // Some compilers can't handle static constexpr member variables.
-  enum { guard_bytes = std::max<size_t>(64, Alignment) };
-  enum { guard_signal = 0xB8AEBCB293DCA04F };
-
-  static void fill_guard_bytes(uint8_t* x) {
-    assert(guard_bytes % sizeof(guard_signal) == 0);
-    const auto guard_signal_with_addr = guard_signal;
-    for (size_t i = 0; i < guard_bytes; i += sizeof(guard_signal)) {
-      memcpy(x + i, &guard_signal_with_addr, sizeof(guard_signal));
-    }
-  }
-
-  static bool check_guard_bytes(const uint8_t* x) {
-    assert(guard_bytes % sizeof(guard_signal) == 0);
-    const auto guard_signal_with_addr = guard_signal;
-    for (size_t i = 0; i < guard_bytes; i += sizeof(guard_signal)) {
-      if (memcmp(x + i, &guard_signal_with_addr, sizeof(guard_signal)) != 0) {
-        return false;
-      }
-    }
-    return true;
-  }
 
  public:
   using value_type = T;
@@ -227,11 +168,13 @@ class Buffer {
   using const_iterator = const T*;
 
   Buffer() : data_(nullptr), size_(0) {}
-  explicit Buffer(size_t size, PaddingBytes extra_bytes = {0})
+  explicit Buffer(size_t size, PaddingBytes extra_bytes = {0},
+                  const char* name = nullptr)
       : data_(reinterpret_cast<T*>(
             allocate(size * sizeof(T) + guard_bytes +
                      std::max<size_t>(guard_bytes, extra_bytes.value)))),
-        size_(size) {
+        size_(size),
+        name_(name) {
     // Fill the region before the allocation with the guard bytes, and poison it
     // for sanitizers.
     uint8_t* before = reinterpret_cast<uint8_t*>(data_);
@@ -253,8 +196,9 @@ class Buffer {
     XNN_ASAN_POISON(after + extra_bytes.value, guard_bytes - extra_bytes.value);
     XNN_MSAN_POISON(after, guard_bytes);
   }
-  Buffer(size_t size, T value, PaddingBytes extra_bytes = {0})
-      : Buffer(size, extra_bytes) {
+  Buffer(size_t size, T value, PaddingBytes extra_bytes = {0},
+         const char* name = nullptr)
+      : Buffer(size, extra_bytes, name) {
     std::fill(begin(), end(), value);
   }
   Buffer(std::initializer_list<T> init) : Buffer(init.size()) {
@@ -264,6 +208,7 @@ class Buffer {
   Buffer(Buffer&& other) : Buffer() {
     std::swap(data_, other.data_);
     std::swap(size_, other.size_);
+    std::swap(name_, other.name_);
   }
   ~Buffer() {
     if (data_) {
@@ -273,8 +218,10 @@ class Buffer {
       XNN_ASAN_UNPOISON(after, guard_bytes);
       XNN_MSAN_UNPOISON(after, guard_bytes);
       if (!check_guard_bytes(after)) {
-        std::cerr << "guard bytes after allocation were corrupted" << std::endl;
-        std::abort();
+        xnn_log_fatal(
+            "Buffer%s%s%s: guard bytes after allocation were corrupted, "
+            "aborting.",
+            name_ ? " '" : "", name_ ? name_ : "", name_ ? "'" : "");
       }
       data_ =
           reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(data_) - guard_bytes);
@@ -284,9 +231,10 @@ class Buffer {
       XNN_ASAN_UNPOISON(before, guard_bytes);
       XNN_MSAN_UNPOISON(before, guard_bytes);
       if (!check_guard_bytes(before)) {
-        std::cerr << "guard bytes before allocation were corrupted"
-                  << std::endl;
-        std::abort();
+        xnn_log_fatal(
+            "Buffer%s%s%s: guard bytes before allocation were corrupted, "
+            "aborting.",
+            name_ ? " '" : "", name_ ? name_ : "", name_ ? "'" : "");
       }
 
       free(data_);
@@ -320,6 +268,79 @@ class Buffer {
   bool operator!=(const Buffer& other) const {
     return size_ != other.size_ || !std::equal(begin(), end(), other.begin());
   }
+
+ private:
+  static void* allocate(size_t bytes) {
+    size_t alignment = std::max(Alignment, sizeof(void*));
+#if defined(_WIN32)
+    void* memory = nullptr;
+    memory = _aligned_malloc(bytes, alignment);
+    if (memory == 0) {
+#if !defined(__GNUC__) && !defined(_MSC_VER) || defined(__EXCEPTIONS) || \
+    defined(_CPPUNWIND)
+      throw std::bad_alloc();
+#endif
+    }
+#elif defined(__ANDROID__) || defined(__CYGWIN__)
+    void* memory = memalign(alignment, bytes);
+    if (memory == 0) {
+#if !defined(__GNUC__) || defined(__EXCEPTIONS)
+      throw std::bad_alloc();
+#endif
+    }
+#else
+    void* memory = nullptr;
+    if (posix_memalign(&memory, alignment, bytes) != 0) {
+#if !defined(__GNUC__) || defined(__EXCEPTIONS)
+      throw std::bad_alloc();
+#endif
+    }
+#endif
+    assert(reinterpret_cast<std::uintptr_t>(memory) % alignment == 0);
+    return reinterpret_cast<T*>(memory);
+  }
+
+  static void free(void* p) {
+#if defined(_WIN32)
+    _aligned_free(p);
+#else
+    ::free(p);
+#endif
+  }
+
+  // Some compilers can't handle static constexpr member variables.
+  enum { guard_bytes = std::max<size_t>(64, Alignment) };
+  // This value is chosen such that in the 16 bytes we have:
+  // - float32 NaN (upper 32 bits)
+  // - float16 NaN (lower 16 bits, the mantissa of the negative float32)
+  // - Negative float32 (lower 32 bits)
+  // - Negative float16 (bits 32-48, the mantissa of the float32 NaN)
+  // This way, we'll detect kernels that fault due to loading and doing
+  // arithmetic on junk data (that could be NaN).
+  enum { guard_signal = 0x7FBF8234B3307C7F };
+
+  static void fill_guard_bytes(uint8_t* x) {
+    assert(guard_bytes % sizeof(guard_signal) == 0);
+    const auto guard_signal_with_addr = guard_signal;
+    for (size_t i = 0; i < guard_bytes; i += sizeof(guard_signal)) {
+      memcpy(x + i, &guard_signal_with_addr, sizeof(guard_signal));
+    }
+  }
+
+  static bool check_guard_bytes(const uint8_t* x) {
+    assert(guard_bytes % sizeof(guard_signal) == 0);
+    const auto guard_signal_with_addr = guard_signal;
+    for (size_t i = 0; i < guard_bytes; i += sizeof(guard_signal)) {
+      if (memcmp(x + i, &guard_signal_with_addr, sizeof(guard_signal)) != 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  T* data_;
+  size_t size_;
+  const char* name_;
 };
 
 // This is a faster way of generating random numbers, by generating as many
@@ -531,40 +552,33 @@ class Tensor {
 
   // This uses the same rules for indexing as numpy, i.e. negative numbers are
   // offset are added to the extents.
-  Tensor<T, Alignment> slice(const std::vector<int64_t>& begins,
-                             const std::vector<int64_t>& ends) const {
-    assert(rank() == begins.size());
-    assert(rank() == ends.size());
-
-    Tensor<T, Alignment> result(*this);
-    std::vector<size_t> offsets(rank());
-    std::vector<size_t> maxs(rank());
-    for (size_t i = 0; i < rank(); ++i) {
-      offsets[i] = begins[i] < 0 ? extents_[i] + begins[i] : begins[i];
-      result.extents_[i] = std::max<int64_t>(
-          0, (ends[i] <= 0 ? static_cast<int64_t>(extents_[i]) + ends[i]
-                           : ends[i]) -
-                 static_cast<int64_t>(offsets[i]));
-      maxs[i] = doz(result.extents_[i], 1);
-    }
-
-    result.begin_ = begin_ + flat_offset(offsets);
-    result.end_ = result.begin_ + result.flat_offset(maxs) + 1;
-
-    return result;
-  }
-
-  // This is similar to the above, but only slices one dimension.
   Tensor<T, Alignment> slice(size_t dim, int64_t begin, int64_t end) const {
     assert(dim < rank());
 
     begin = begin < 0 ? extents_[dim] + begin : begin;
     end = end <= 0 ? extents_[dim] + end : end;
 
+    begin = std::max<int64_t>(std::min<int64_t>(begin, extents_[dim]), 0);
+    end = std::max<int64_t>(std::min<int64_t>(end, extents_[dim]), begin);
+
     Tensor<T, Alignment> result(*this);
     result.extents_[dim] = end - begin;
     result.begin_ = begin_ + strides_[dim] * begin;
     result.end_ = begin_ + strides_[dim] * end;
+
+    return result;
+  }
+
+  // This is similar to above, but slices all dimensions.
+  Tensor<T, Alignment> slice(const std::vector<int64_t>& begins,
+                             const std::vector<int64_t>& ends) const {
+    assert(rank() == begins.size());
+    assert(rank() == ends.size());
+
+    Tensor<T, Alignment> result(*this);
+    for (size_t i = 0; i < rank(); ++i) {
+      result = result.slice(i, begins[i], ends[i]);
+    }
 
     return result;
   }
@@ -575,14 +589,11 @@ class Tensor {
 
   // Slice the leading dimensions at the indices of `at`.
   Tensor<T, Alignment> slice_leading(std::vector<size_t> at) const {
-    std::vector<int64_t> begins(rank());
-    std::vector<int64_t> ends(rank());
-    std::copy(at.begin(), at.end(), begins.begin());
-    std::copy(at.begin(), at.end(), ends.begin());
+    Tensor<T, Alignment> result(*this);
     for (size_t i = 0; i < at.size(); ++i) {
-      ends[i] += 1;
+      result = result.slice(i, at[i], at[i] + 1);
     }
-    return slice(begins, ends);
+    return result;
   }
 
   // Split a dimension dim into dimensions of extent `split_extents`. The first
@@ -953,7 +964,7 @@ class DatatypeGenerator {
   bool reinterpret_ = false;
 
  public:
-  DatatypeGenerator(float min, float max, const xnn_quantization_params& = {}) {
+  DatatypeGenerator(double min, double max, const xnn_quantization_params& = {}) {
     if (min <= NumericLimits<T>::min() && max >= NumericLimits<T>::max()) {
       // The caller wants a full range of random value. Rather than generate
       // floats uniformly distributed across the range of floats, where a
@@ -964,10 +975,12 @@ class DatatypeGenerator {
       reinterpret_ = true;
     } else {
       reinterpret_ = false;
+      min = std::max<double>(min, NumericLimits<T>::min());
+      max = std::min<double>(max, NumericLimits<T>::max());
       dist_ = std::uniform_real_distribution<float>(min, max);
     }
   }
-  DatatypeGenerator(const xnn_quantization_params& = {})
+  explicit DatatypeGenerator(const xnn_quantization_params& = {})
       : DatatypeGenerator(NumericLimits<T>::min(), NumericLimits<T>::max()) {}
 
   template <typename Rng>
@@ -1019,7 +1032,7 @@ class DatatypeGenerator<quantized<T>> {
 
  public:
   DatatypeGenerator(float min, float max,
-                    const xnn_quantization_params& params) {
+                    const xnn_quantization_params params = {0, 1.0f}) {
     min = std::ceil(fake_quantize(min, params));
     max = std::floor(fake_quantize(max, params));
     dist_ = std::uniform_int_distribution<int>(round_float_to_int<T>(min),
@@ -1028,7 +1041,8 @@ class DatatypeGenerator<quantized<T>> {
   explicit DatatypeGenerator(const xnn_quantization_params& params)
       : DatatypeGenerator(-1.0f, 1.0f, params) {}
   DatatypeGenerator()
-      : dist_(std::numeric_limits<T>::min(), std::numeric_limits<T>::max()) {}
+      : DatatypeGenerator(std::numeric_limits<T>::min(),
+                          std::numeric_limits<T>::max()) {}
 
   template <typename Rng>
   T operator()(Rng& rng) {
@@ -1141,4 +1155,4 @@ inline std::string index_to_string(const std::vector<size_t>& v) {
 
 }  // namespace xnnpack
 
-#endif  // __XNNPACK_TEST_BUFFER_H_
+#endif  // XNNPACK_TEST_BUFFER_H_

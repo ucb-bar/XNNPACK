@@ -3,7 +3,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#pragma once
+#ifndef XNNPACK_SRC_XNNPACK_CONFIG_TYPES_H_
+#define XNNPACK_SRC_XNNPACK_CONFIG_TYPES_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -65,6 +66,9 @@ struct xnn_unary_elementwise_config {
 struct xnn_reduce_config {
   xnn_reduce_ukernel_fn ukernel;
   xnn_reduce_discontiguous_ukernel_fn rd_ukernel;
+  // TODO(b/405244706): remove once all the datatypes and reductions are
+  // supported.
+  xnn_reduce_discontiguous_ukernel_fn2 rd_ukernel2;
   uint32_t identity_value;
   union {
     xnn_init_reduce_params_fn reduce;
@@ -98,9 +102,21 @@ struct xnn_avgpool_config {
 };
 
 struct xnn_pack_lh_config {
-  xnn_pack_lh_ukernel_fn ukernel;
-  xnn_pack_lh_size_fn size_fn;
-  xnn_pack_lh_offset_fn offset_fn;
+  union {
+    struct {
+      xnn_pack_lh_ukernel_fn pack_lh_fn;
+      xnn_pack_lh_size_fn size_fn;
+      xnn_pack_lh_offset_fn offset_fn;
+    };
+    struct {
+      xnn_pack_lh_igemm_ukernel_fn pack_lh_for_igemm_fn;
+      xnn_pack_lh_igemm_size_fn size_for_igemm_fn;
+      xnn_pack_lh_igemm_offset_fn offset_for_igemm_fn;
+    };
+  };
+  uint32_t log2_input_element_size;
+  uint32_t log2_packed_element_size;
+  bool gemv_noop;
 };
 
 struct xnn_dwconv_config {
@@ -295,3 +311,5 @@ struct xnn_unpool_config {
 #ifdef __cplusplus
 }  // extern "C"
 #endif
+
+#endif  // XNNPACK_SRC_XNNPACK_CONFIG_TYPES_H_

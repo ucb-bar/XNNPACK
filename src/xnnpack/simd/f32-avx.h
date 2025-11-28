@@ -4,8 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-#ifndef __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_H_
-#define __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_H_
+#ifndef XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_H_
+#define XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_H_
 
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/simd/f32-avx-base.h"  // IWYU pragma: export
@@ -69,4 +69,9 @@ static XNN_INLINE xnn_simd_f32_t xnn_cmpeq_f32(xnn_simd_f32_t a,
   return _mm256_cmp_ps(a, b, _CMP_EQ_OQ);
 }
 
-#endif  // __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_H_
+static XNN_INLINE xnn_simd_f32_t xnn_cmpneq_f32(xnn_simd_f32_t a,
+  xnn_simd_f32_t b) {
+return _mm256_cmp_ps(a, b, _CMP_NEQ_OQ);
+}
+
+#endif  // XNNPACK_SRC_XNNPACK_SIMD_F32_AVX_H_

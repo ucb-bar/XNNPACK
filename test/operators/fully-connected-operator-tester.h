@@ -6,7 +6,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#pragma once
+#ifndef XNNPACK_TEST_OPERATORS_FULLY_CONNECTED_OPERATOR_TESTER_H_
+#define XNNPACK_TEST_OPERATORS_FULLY_CONNECTED_OPERATOR_TESTER_H_
 
 #include <algorithm>
 #include <cassert>
@@ -17,7 +18,6 @@
 #include <limits>
 #include <memory>
 #include <random>
-#include <vector>
 
 #include <gtest/gtest.h>
 #include "include/xnnpack.h"
@@ -335,7 +335,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_zero_point(), kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -354,15 +354,20 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qd8_f16_qc4w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qd8_f16_qc4w(
-                    fully_connected_op, input.data(), output.data(),
-                    reinterpret_cast<const struct xnn_quantization_params*>(
-                        quantization_params.data())));
+                xnn_reshape_fully_connected_nc_qd8_f16_qc4w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+
+      ASSERT_EQ(
+          xnn_status_success,
+          xnn_setup_fully_connected_nc_qd8_f16_qc4w(
+              fully_connected_op, input.data(), output.data(), workspace.data(),
+              reinterpret_cast<const struct xnn_quantization_params*>(
+                  quantization_params.data())));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -383,7 +388,7 @@ class FullyConnectedOperatorTester {
                       kernel.data(), has_bias() ? bias.data() : nullptr,
                       output_min, output_max,
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      nullptr, auto_weights_cache.get(), &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -392,13 +397,18 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qd8_f16_qc4w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
 
         xnnpack::Buffer<float> output2(output.size());
         ASSERT_EQ(xnn_status_success,
                   xnn_setup_fully_connected_nc_qd8_f16_qc4w(
                       fully_connected_op2, input.data(), output2.data(),
+                      workspace.data(),
                       reinterpret_cast<const struct xnn_quantization_params*>(
                           quantization_params.data())));
 
@@ -547,7 +557,7 @@ class FullyConnectedOperatorTester {
           reinterpret_cast<const uint16_t*>(kernel_scale2d.data()),
           kernel.data(), has_bias() ? bias.data() : nullptr, output_min,
           output_max, transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-          nullptr, auto_weights_cache.get(), &fully_connected_op);
+          auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -565,15 +575,20 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qd8_f16_qb4w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qd8_f16_qb4w(
-                    fully_connected_op, input.data(), output.data(),
-                    reinterpret_cast<const struct xnn_quantization_params*>(
-                        quantization_params.data())));
+                xnn_reshape_fully_connected_nc_qd8_f16_qb4w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+
+      ASSERT_EQ(
+          xnn_status_success,
+          xnn_setup_fully_connected_nc_qd8_f16_qb4w(
+              fully_connected_op, input.data(), output.data(), workspace.data(),
+              reinterpret_cast<const struct xnn_quantization_params*>(
+                  quantization_params.data())));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -596,7 +611,7 @@ class FullyConnectedOperatorTester {
                       kernel.data(), has_bias() ? bias.data() : nullptr,
                       output_min, output_max,
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      nullptr, auto_weights_cache.get(), &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -605,13 +620,18 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qd8_f16_qb4w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
 
         xnnpack::Buffer<xnn_float16> output2(output.size());
         ASSERT_EQ(xnn_status_success,
                   xnn_setup_fully_connected_nc_qd8_f16_qb4w(
                       fully_connected_op2, input.data(), output2.data(),
+                      workspace.data(),
                       reinterpret_cast<const struct xnn_quantization_params*>(
                           quantization_params.data())));
 
@@ -765,7 +785,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_zero_point(), kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -784,15 +804,20 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qd8_f32_qc4w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qd8_f32_qc4w(
-                    fully_connected_op, input.data(), output.data(),
-                    reinterpret_cast<const struct xnn_quantization_params*>(
-                        quantization_params.data())));
+                xnn_reshape_fully_connected_nc_qd8_f32_qc4w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+
+      ASSERT_EQ(
+          xnn_status_success,
+          xnn_setup_fully_connected_nc_qd8_f32_qc4w(
+              fully_connected_op, input.data(), output.data(), workspace.data(),
+              reinterpret_cast<const struct xnn_quantization_params*>(
+                  quantization_params.data())));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -813,7 +838,7 @@ class FullyConnectedOperatorTester {
                       kernel.data(), has_bias() ? bias.data() : nullptr,
                       output_min, output_max,
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      nullptr, auto_weights_cache.get(), &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -822,13 +847,18 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qd8_f32_qc4w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
 
         xnnpack::Buffer<float> output2(output.size());
         ASSERT_EQ(xnn_status_success,
                   xnn_setup_fully_connected_nc_qd8_f32_qc4w(
                       fully_connected_op2, input.data(), output2.data(),
+                      workspace.data(),
                       reinterpret_cast<const struct xnn_quantization_params*>(
                           quantization_params.data())));
 
@@ -974,7 +1004,7 @@ class FullyConnectedOperatorTester {
           reinterpret_cast<const uint16_t*>(kernel_scale2d.data()),
           kernel.data(), has_bias() ? bias.data() : nullptr, output_min,
           output_max, transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-          nullptr, auto_weights_cache.get(), &fully_connected_op);
+          auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -992,15 +1022,20 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qd8_f32_qb4w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qd8_f32_qb4w(
-                    fully_connected_op, input.data(), output.data(),
-                    reinterpret_cast<const struct xnn_quantization_params*>(
-                        quantization_params.data())));
+                xnn_reshape_fully_connected_nc_qd8_f32_qb4w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+
+      ASSERT_EQ(
+          xnn_status_success,
+          xnn_setup_fully_connected_nc_qd8_f32_qb4w(
+              fully_connected_op, input.data(), output.data(), workspace.data(),
+              reinterpret_cast<const struct xnn_quantization_params*>(
+                  quantization_params.data())));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -1023,7 +1058,7 @@ class FullyConnectedOperatorTester {
                       kernel.data(), has_bias() ? bias.data() : nullptr,
                       output_min, output_max,
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      nullptr, auto_weights_cache.get(), &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -1032,13 +1067,18 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qd8_f32_qb4w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
 
         xnnpack::Buffer<float> output2(output.size());
         ASSERT_EQ(xnn_status_success,
                   xnn_setup_fully_connected_nc_qd8_f32_qb4w(
                       fully_connected_op2, input.data(), output2.data(),
+                      workspace.data(),
                       reinterpret_cast<const struct xnn_quantization_params*>(
                           quantization_params.data())));
 
@@ -1105,7 +1145,7 @@ class FullyConnectedOperatorTester {
       xnn_x8_packq_f32qp8_ukernel__scalar_u1(
           batch_size(), k2, mr_packed, kr, sr,
           /*m_idx_start=*/0, input.data(),
-          /*lhs_stride=*/k2 * sizeof(float), input_qp8.data());
+          /*lhs_stride=*/input_stride() * sizeof(float), input_qp8.data());
 
       // Compute reference results, without renormalization.
       std::fill(output_ref.begin(), output_ref.end(), 0.0f);
@@ -1204,7 +1244,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_zero_point(), kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -1223,13 +1263,16 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qp8_f32_qc4w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qp8_f32_qc4w(
-                    fully_connected_op, input_qp8.data(), output.data()));
+                xnn_reshape_fully_connected_nc_qp8_f32_qc4w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+      ASSERT_EQ(xnn_status_success, xnn_setup_fully_connected_nc_qp8_f32_qc4w(
+                                        fully_connected_op, input_qp8.data(),
+                                        output.data(), workspace.data()));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -1250,7 +1293,7 @@ class FullyConnectedOperatorTester {
                       kernel.data(), has_bias() ? bias.data() : nullptr,
                       output_min, output_max,
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      nullptr, auto_weights_cache.get(), &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -1259,13 +1302,16 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qp8_f32_qc4w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
-
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
         xnnpack::Buffer<float> output2(output.size());
-        ASSERT_EQ(xnn_status_success,
-                  xnn_setup_fully_connected_nc_qp8_f32_qc4w(
-                      fully_connected_op2, input_qp8.data(), output2.data()));
+        ASSERT_EQ(xnn_status_success, xnn_setup_fully_connected_nc_qp8_f32_qc4w(
+                                          fully_connected_op2, input_qp8.data(),
+                                          output2.data(), workspace.data()));
 
         ASSERT_EQ(xnn_status_success, xnn_run_operator(fully_connected_op2,
                                                        /*threadpool=*/nullptr));
@@ -1324,10 +1370,10 @@ class FullyConnectedOperatorTester {
       const size_t input_packed_size =
           xnn_x8_packq_f32qp8_packed_size(batch_size(), k, mr_packed, kr, sr);
       xnnpack::Buffer<int8_t> input_qp8(input_packed_size);
-      xnn_x8_packq_f32qp8_ukernel__scalar_u1(batch_size(), k, mr_packed, kr, sr,
-                                             /*m_idx_start=*/0, input.data(),
-                                             /*lhs_stride=*/k * sizeof(float),
-                                             input_qp8.data());
+      xnn_x8_packq_f32qp8_ukernel__scalar_u1(
+          batch_size(), k, mr_packed, kr, sr,
+          /*m_idx_start=*/0, input.data(),
+          /*lhs_stride=*/input_stride() * sizeof(float), input_qp8.data());
 
       // Compute reference results, without renormalization.
       std::fill(output_ref.begin(), output_ref.end(), 0.0f);
@@ -1411,7 +1457,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -1430,13 +1476,16 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qp8_f32_qc8w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qp8_f32_qc8w(
-                    fully_connected_op, input_qp8.data(), output.data()));
+                xnn_reshape_fully_connected_nc_qp8_f32_qc8w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+      ASSERT_EQ(xnn_status_success, xnn_setup_fully_connected_nc_qp8_f32_qc8w(
+                                        fully_connected_op, input_qp8.data(),
+                                        output.data(), workspace.data()));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -1456,7 +1505,7 @@ class FullyConnectedOperatorTester {
                 input_channels(), output_channels(), input_stride(),
                 output_stride(), kernel_scale.data(), kernel.data(),
                 has_bias() ? bias.data() : nullptr, output_min, output_max,
-                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
                 auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
@@ -1466,13 +1515,16 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qp8_f32_qc8w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
-
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
         xnnpack::Buffer<float> output2(output.size());
-        ASSERT_EQ(xnn_status_success,
-                  xnn_setup_fully_connected_nc_qp8_f32_qc8w(
-                      fully_connected_op2, input_qp8.data(), output2.data()));
+        ASSERT_EQ(xnn_status_success, xnn_setup_fully_connected_nc_qp8_f32_qc8w(
+                                          fully_connected_op2, input_qp8.data(),
+                                          output2.data(), workspace.data()));
 
         ASSERT_EQ(xnn_status_success, xnn_run_operator(fully_connected_op2,
                                                        /*threadpool=*/nullptr));
@@ -1537,7 +1589,7 @@ class FullyConnectedOperatorTester {
       xnn_x8_packq_f32qp8_ukernel__scalar_u1(
           batch_size(), k2, mr_packed, kr, sr,
           /*m_idx_start=*/0, input.data(),
-          /*lhs_stride=*/k2 * sizeof(float), input_qp8.data());
+          /*lhs_stride=*/input_stride() * sizeof(float), input_qp8.data());
 
       // Compute reference results, without renormalization.
       std::fill(output_ref.begin(), output_ref.end(), 0.0f);
@@ -1555,15 +1607,15 @@ class FullyConnectedOperatorTester {
                                       : (ni * kernel_stride) + (k_index / 2);
               const size_t plane_idx = transpose_weights() ? ni : ki;
               const int32_t kernel_value =
-                  int32_t((plane_idx % 2 == 0)
-                              ? (kernel[nb_index] & UINT8_C(0xF))
-                              : (kernel[nb_index] >> 4)) -
+                  static_cast<int32_t>((plane_idx % 2 == 0)
+                                           ? (kernel[nb_index] & UINT8_C(0xF))
+                                           : (kernel[nb_index] >> 4)) -
                   kernel_zero_point();
               ksum += kernel_value;
               c_ref_acc +=
-                  int32_t(xnn_x8_packq_f32qp8_get_quantized(
+                  static_cast<int32_t>(xnn_x8_packq_f32qp8_get_quantized(
                       mi, k_index, input_qp8.data(), k2, mr_packed, kr, sr)) *
-                  int32_t(kernel_value);
+                  static_cast<int32_t>(kernel_value);
             }
             size_t scale_index = ni * num_blocks + bi;
             float scale = math_cvt_fp32_bf16(kernel_scale2d[scale_index]);
@@ -1628,7 +1680,7 @@ class FullyConnectedOperatorTester {
           block_size(), kernel_zero_point(), kernel_scale2d.data(),
           kernel.data(), has_bias() ? bias.data() : nullptr, output_min,
           output_max, transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-          nullptr, auto_weights_cache.get(), &fully_connected_op);
+          auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -1646,13 +1698,16 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qp8_f32_qb4w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qp8_f32_qb4w(
-                    fully_connected_op, input_qp8.data(), output.data()));
+                xnn_reshape_fully_connected_nc_qp8_f32_qb4w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+      ASSERT_EQ(xnn_status_success, xnn_setup_fully_connected_nc_qp8_f32_qb4w(
+                                        fully_connected_op, input_qp8.data(),
+                                        output.data(), workspace.data()));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -1674,7 +1729,7 @@ class FullyConnectedOperatorTester {
                 /*batch_size=*/block_size(), kernel_zero_point(),
                 kernel_scale2d.data(), kernel.data(),
                 has_bias() ? bias.data() : nullptr, output_min, output_max,
-                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
                 auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
@@ -1684,13 +1739,16 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qp8_f32_qb4w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
-
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
         xnnpack::Buffer<float> output2(output.size());
-        ASSERT_EQ(xnn_status_success,
-                  xnn_setup_fully_connected_nc_qp8_f32_qb4w(
-                      fully_connected_op2, input_qp8.data(), output2.data()));
+        ASSERT_EQ(xnn_status_success, xnn_setup_fully_connected_nc_qp8_f32_qb4w(
+                                          fully_connected_op2, input_qp8.data(),
+                                          output2.data(), workspace.data()));
 
         ASSERT_EQ(xnn_status_success, xnn_run_operator(fully_connected_op2,
                                                        /*threadpool=*/nullptr));
@@ -1832,7 +1890,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -1850,15 +1908,20 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qd8_f16_qc8w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qd8_f16_qc8w(
-                    fully_connected_op, input.data(), output.data(),
-                    reinterpret_cast<const struct xnn_quantization_params*>(
-                        quantization_params.data())));
+                xnn_reshape_fully_connected_nc_qd8_f16_qc8w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+
+      ASSERT_EQ(
+          xnn_status_success,
+          xnn_setup_fully_connected_nc_qd8_f16_qc8w(
+              fully_connected_op, input.data(), output.data(), workspace.data(),
+              reinterpret_cast<const struct xnn_quantization_params*>(
+                  quantization_params.data())));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -1878,7 +1941,7 @@ class FullyConnectedOperatorTester {
                 input_channels(), output_channels(), input_stride(),
                 output_stride(), kernel_scale.data(), kernel.data(),
                 has_bias() ? bias.data() : nullptr, output_min, output_max,
-                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
                 auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
@@ -1888,13 +1951,18 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qd8_f16_qc8w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
 
         xnnpack::Buffer<xnn_float16> output2(output.size());
         ASSERT_EQ(xnn_status_success,
                   xnn_setup_fully_connected_nc_qd8_f16_qc8w(
                       fully_connected_op2, input.data(), output2.data(),
+                      workspace.data(),
                       reinterpret_cast<const struct xnn_quantization_params*>(
                           quantization_params.data())));
 
@@ -2030,7 +2098,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -2048,15 +2116,20 @@ class FullyConnectedOperatorTester {
       std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
           auto_fully_connected_op(fully_connected_op, xnn_delete_operator);
 
-      ASSERT_EQ(xnn_status_success, xnn_reshape_fully_connected_nc_qd8_f32_qc8w(
-                                        fully_connected_op, batch_size(),
-                                        /*threadpool=*/nullptr));
-
+      size_t workspace_size = 0;
       ASSERT_EQ(xnn_status_success,
-                xnn_setup_fully_connected_nc_qd8_f32_qc8w(
-                    fully_connected_op, input.data(), output.data(),
-                    reinterpret_cast<const struct xnn_quantization_params*>(
-                        quantization_params.data())));
+                xnn_reshape_fully_connected_nc_qd8_f32_qc8w(
+                    fully_connected_op, batch_size(), &workspace_size,
+                    /*threadpool=*/nullptr));
+      xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT> workspace(
+          workspace_size);
+
+      ASSERT_EQ(
+          xnn_status_success,
+          xnn_setup_fully_connected_nc_qd8_f32_qc8w(
+              fully_connected_op, input.data(), output.data(), workspace.data(),
+              reinterpret_cast<const struct xnn_quantization_params*>(
+                  quantization_params.data())));
 
       ASSERT_EQ(xnn_status_success,
                 xnn_run_operator(fully_connected_op, /*threadpool=*/nullptr));
@@ -2076,7 +2149,7 @@ class FullyConnectedOperatorTester {
                 input_channels(), output_channels(), input_stride(),
                 output_stride(), kernel_scale.data(), kernel.data(),
                 has_bias() ? bias.data() : nullptr, output_min, output_max,
-                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
                 auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
@@ -2086,13 +2159,18 @@ class FullyConnectedOperatorTester {
 
         ASSERT_EQ(xnn_status_success,
                   xnn_reshape_fully_connected_nc_qd8_f32_qc8w(
-                      fully_connected_op2, batch_size(),
+                      fully_connected_op2, batch_size(), &workspace_size,
                       /*threadpool=*/nullptr));
+        if (workspace_size > workspace.size()) {
+          workspace = xnnpack::Buffer<uint8_t, XNN_ALLOCATION_ALIGNMENT>(
+              workspace_size);
+        }
 
         xnnpack::Buffer<float> output2(output.size());
         ASSERT_EQ(xnn_status_success,
                   xnn_setup_fully_connected_nc_qd8_f32_qc8w(
                       fully_connected_op2, input.data(), output2.data(),
+                      workspace.data(),
                       reinterpret_cast<const struct xnn_quantization_params*>(
                           quantization_params.data())));
 
@@ -2216,7 +2294,7 @@ class FullyConnectedOperatorTester {
           /*kernel_scale=*/1.0f, kernel.data(),
           has_bias() ? bias.data() : nullptr, output_zero_point, output_scale,
           int8_t(qmin() - 0x80), int8_t(qmax() - 0x80),
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -2263,7 +2341,7 @@ class FullyConnectedOperatorTester {
                 /*kernel_scale=*/1.0f, kernel.data(),
                 has_bias() ? bias.data() : nullptr, output_zero_point,
                 output_scale, int8_t(qmin() - 0x80), int8_t(qmax() - 0x80),
-                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+                transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
                 auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
@@ -2441,7 +2519,7 @@ class FullyConnectedOperatorTester {
           int8_t(kernel_zero_point()), requantization_scales.data(),
           kernel.data(), has_bias() ? bias.data() : nullptr,
           int8_t(output_zero_point() - 0x80), /*output_scale=*/1.0f,
-          int8_t(qmin() - 0x80), int8_t(qmax() - 0x80), 0, nullptr,
+          int8_t(qmin() - 0x80), int8_t(qmax() - 0x80), 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -2488,8 +2566,8 @@ class FullyConnectedOperatorTester {
                       has_bias() ? bias.data() : nullptr,
                       int8_t(output_zero_point() - 0x80),
                       /*output_scale=*/1.0f, int8_t(qmin() - 0x80),
-                      int8_t(qmax() - 0x80), 0, nullptr,
-                      auto_weights_cache.get(), &fully_connected_op2));
+                      int8_t(qmax() - 0x80), 0, auto_weights_cache.get(),
+                      &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -2668,7 +2746,7 @@ class FullyConnectedOperatorTester {
           has_bias() ? bias.data() : nullptr,
           int8_t(output_zero_point() - 0x80), /*output_scale=*/1.0f,
           int8_t(qmin() - 0x80), int8_t(qmax() - 0x80),
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, nullptr,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -2716,7 +2794,7 @@ class FullyConnectedOperatorTester {
                       /*output_scale=*/1.0f, int8_t(qmin() - 0x80),
                       int8_t(qmax() - 0x80),
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      nullptr, auto_weights_cache.get(), &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -2869,7 +2947,7 @@ class FullyConnectedOperatorTester {
           uint8_t(kernel_zero_point()), /*kernel_scale=*/1.0f, kernel.data(),
           has_bias() ? bias.data() : nullptr, output_zero_point, output_scale,
           qmin(), qmax(), transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-          nullptr, auto_weights_cache.get(), &fully_connected_op);
+          auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -2913,7 +2991,7 @@ class FullyConnectedOperatorTester {
                       kernel.data(), has_bias() ? bias.data() : nullptr,
                       output_zero_point, output_scale, qmin(), qmax(),
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      nullptr, auto_weights_cache.get(), &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         // Smart pointer to automatically delete fully_connected_op.
@@ -3052,7 +3130,6 @@ class FullyConnectedOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(/*allocator=*/nullptr));
       xnn_operator_t fully_connected_op = nullptr;
 
-      xnn_code_cache_t auto_code_cache = nullptr;
       struct xnn_internal_weights_cache* internal_weights_cache = nullptr;
       std::unique_ptr<xnn_weights_cache_provider,
                       decltype(&xnn_delete_weights_cache)>
@@ -3076,7 +3153,7 @@ class FullyConnectedOperatorTester {
               output_stride(), kernel_as_float.data(),
               has_bias() ? bias_as_float.data() : nullptr, output_min,
               output_max, transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-              auto_code_cache, auto_weights_cache.get(), &fully_connected_op);
+              auto_weights_cache.get(), &fully_connected_op);
           break;
         case WeightsType::FP16:
           status = xnn_create_fully_connected_nc_f32_f16(
@@ -3084,7 +3161,7 @@ class FullyConnectedOperatorTester {
               output_stride(), kernel.data(),
               has_bias() ? bias.data() : nullptr, output_min, output_max,
               transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-              auto_code_cache, auto_weights_cache.get(), &fully_connected_op);
+              auto_weights_cache.get(), &fully_connected_op);
           break;
         default:
           GTEST_FAIL() << "unexpected weights type";
@@ -3142,9 +3219,6 @@ class FullyConnectedOperatorTester {
       VerifyF32(output, output_ref, output_max, output_min);
 
       if (use_weights_cache()) {
-        // We already finalized the code cache, so create a new code cache if we
-        // are testing JIT.
-        xnn_code_cache_t auto_inner_code_cache = nullptr;
         // Create another operator with the same weights cache.
         xnn_operator_t fully_connected_op2 = nullptr;
         size_t old_weights_cache_size =
@@ -3158,8 +3232,7 @@ class FullyConnectedOperatorTester {
                           has_bias() ? bias_as_float.data() : nullptr,
                           output_min, output_max,
                           transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                          auto_inner_code_cache, auto_weights_cache.get(),
-                          &fully_connected_op2));
+                          auto_weights_cache.get(), &fully_connected_op2));
             break;
           case WeightsType::FP16:
             ASSERT_EQ(
@@ -3169,8 +3242,7 @@ class FullyConnectedOperatorTester {
                     output_stride(), kernel.data(),
                     has_bias() ? bias.data() : nullptr, output_min, output_max,
                     transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                    auto_code_cache, auto_weights_cache.get(),
-                    &fully_connected_op2));
+                    auto_weights_cache.get(), &fully_connected_op2));
             break;
           default:
             GTEST_FAIL() << "unexpected weights type";
@@ -3336,7 +3408,6 @@ class FullyConnectedOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(/*allocator=*/nullptr));
       xnn_operator_t fully_connected_op = nullptr;
 
-      xnn_code_cache_t auto_code_cache = nullptr;
       struct xnn_internal_weights_cache* internal_weights_cache = nullptr;
       std::unique_ptr<xnn_weights_cache_provider,
                       decltype(&xnn_delete_weights_cache)>
@@ -3355,7 +3426,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_zero_point(), scale.data(), kernel.data(),
           has_bias() ? bias.data() : nullptr, output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, auto_code_cache,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -3387,9 +3458,6 @@ class FullyConnectedOperatorTester {
       VerifyF32(output, output_ref, output_max, output_min);
 
       if (use_weights_cache()) {
-        // We already finalized the code cache, so create a new code cache if we
-        // are testing JIT.
-        xnn_code_cache_t auto_inner_code_cache = nullptr;
         // Create another operator with the same weights cache.
         xnn_operator_t fully_connected_op2 = nullptr;
         size_t old_weights_cache_size =
@@ -3401,8 +3469,7 @@ class FullyConnectedOperatorTester {
                       kernel.data(), has_bias() ? bias.data() : nullptr,
                       output_min, output_max,
                       transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                      auto_inner_code_cache, auto_weights_cache.get(),
-                      &fully_connected_op2));
+                      auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
@@ -3534,7 +3601,6 @@ class FullyConnectedOperatorTester {
       ASSERT_EQ(xnn_status_success, xnn_initialize(/*allocator=*/nullptr));
       xnn_operator_t fully_connected_op = nullptr;
 
-      xnn_code_cache_t auto_code_cache = nullptr;
       struct xnn_internal_weights_cache* internal_weights_cache = nullptr;
       std::unique_ptr<xnn_weights_cache_provider,
                       decltype(&xnn_delete_weights_cache)>
@@ -3553,7 +3619,7 @@ class FullyConnectedOperatorTester {
           input_channels(), output_channels(), input_stride(), output_stride(),
           scale.data(), kernel.data(), has_bias() ? bias.data() : nullptr,
           output_min, output_max,
-          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0, auto_code_cache,
+          transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
           auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
@@ -3585,9 +3651,6 @@ class FullyConnectedOperatorTester {
       VerifyF32(output, output_ref, output_max, output_min);
 
       if (use_weights_cache()) {
-        // We already finalized the code cache, so create a new code cache if we
-        // are testing JIT.
-        xnn_code_cache_t auto_inner_code_cache = nullptr;
         // Create another operator with the same weights cache.
         xnn_operator_t fully_connected_op2 = nullptr;
         size_t old_weights_cache_size =
@@ -3599,8 +3662,7 @@ class FullyConnectedOperatorTester {
                 output_stride(), scale.data(), kernel.data(),
                 has_bias() ? bias.data() : nullptr, output_min, output_max,
                 transpose_weights() ? XNN_FLAG_TRANSPOSE_WEIGHTS : 0,
-                auto_inner_code_cache, auto_weights_cache.get(),
-                &fully_connected_op2));
+                auto_weights_cache.get(), &fully_connected_op2));
         ASSERT_NE(nullptr, fully_connected_op2);
 
         std::unique_ptr<xnn_operator, decltype(&xnn_delete_operator)>
@@ -3723,8 +3785,7 @@ class FullyConnectedOperatorTester {
       const xnn_status status = xnn_create_fully_connected_nc_bf16_f32(
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel.data(), has_bias() ? bias.data() : nullptr, output_min,
-          output_max, flags, nullptr, auto_weights_cache.get(),
-          &fully_connected_op);
+          output_max, flags, auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -3759,13 +3820,13 @@ class FullyConnectedOperatorTester {
         xnn_operator_t fully_connected_op2 = nullptr;
         size_t old_weights_cache_size =
             internal_weights_cache->cache.weights.size;
-        ASSERT_EQ(xnn_status_success,
-                  xnn_create_fully_connected_nc_bf16_f32(
-                      input_channels(), output_channels(), input_stride(),
-                      output_stride(), kernel.data(),
-                      has_bias() ? bias.data() : nullptr, output_min,
-                      output_max, flags, nullptr, auto_weights_cache.get(),
-                      &fully_connected_op2));
+        ASSERT_EQ(
+            xnn_status_success,
+            xnn_create_fully_connected_nc_bf16_f32(
+                input_channels(), output_channels(), input_stride(),
+                output_stride(), kernel.data(),
+                has_bias() ? bias.data() : nullptr, output_min, output_max,
+                flags, auto_weights_cache.get(), &fully_connected_op2));
         if (status == xnn_status_unsupported_hardware) {
           GTEST_SKIP();
         }
@@ -3915,7 +3976,7 @@ class FullyConnectedOperatorTester {
       const xnn_status status = xnn_create_fully_connected_nc_f16(
           input_channels(), output_channels(), input_stride(), output_stride(),
           kernel_data, has_bias() ? bias_data : nullptr, output_min, output_max,
-          flags, nullptr, auto_weights_cache.get(), &fully_connected_op);
+          flags, auto_weights_cache.get(), &fully_connected_op);
       if (status == xnn_status_unsupported_hardware) {
         GTEST_SKIP();
       }
@@ -3950,13 +4011,12 @@ class FullyConnectedOperatorTester {
         xnn_operator_t fully_connected_op2 = nullptr;
         size_t old_weights_cache_size =
             internal_weights_cache->cache.weights.size;
-        ASSERT_EQ(
-            xnn_status_success,
-            xnn_create_fully_connected_nc_f16(
-                input_channels(), output_channels(), input_stride(),
-                output_stride(), kernel_data, has_bias() ? bias_data : nullptr,
-                output_min, output_max, flags, nullptr,
-                auto_weights_cache.get(), &fully_connected_op2));
+        ASSERT_EQ(xnn_status_success,
+                  xnn_create_fully_connected_nc_f16(
+                      input_channels(), output_channels(), input_stride(),
+                      output_stride(), kernel_data,
+                      has_bias() ? bias_data : nullptr, output_min, output_max,
+                      flags, auto_weights_cache.get(), &fully_connected_op2));
         if (status == xnn_status_unsupported_hardware) {
           GTEST_SKIP();
         }
@@ -4038,3 +4098,5 @@ class FullyConnectedOperatorTester {
   WeightsType weights_type_{WeightsType::Default};
   bool use_weights_cache_{false};
 };
+
+#endif  // XNNPACK_TEST_OPERATORS_FULLY_CONNECTED_OPERATOR_TESTER_H_

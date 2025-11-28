@@ -4,8 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-#ifndef __XNNPACK_SRC_XNNPACK_SIMD_F32_SCALAR_H_
-#define __XNNPACK_SRC_XNNPACK_SIMD_F32_SCALAR_H_
+#ifndef XNNPACK_SRC_XNNPACK_SIMD_F32_SCALAR_H_
+#define XNNPACK_SRC_XNNPACK_SIMD_F32_SCALAR_H_
 
 #include <math.h>
 #include <stddef.h>
@@ -105,6 +105,16 @@ static XNN_INLINE xnn_simd_f32_t xnn_xor_f32(xnn_simd_f32_t a,
   return *(const xnn_simd_f32_t *)&res;
 }
 
+static XNN_INLINE xnn_simd_f32_t xnn_not_f32(xnn_simd_f32_t a) {
+  const uint32_t res = ~(*(const uint32_t *)&a);
+  return *(const xnn_simd_f32_t *)&res;
+}
+
+static XNN_INLINE xnn_simd_f32_t xnn_andnot_f32(xnn_simd_f32_t a,
+                                                xnn_simd_f32_t b) {
+  return xnn_and_f32(xnn_not_f32(a), b);
+}
+
 static XNN_INLINE xnn_simd_f32_t xnn_sll_f32(xnn_simd_f32_t a, uint8_t bits) {
   const uint32_t res = *(uint32_t *)&a << bits;
   return *(const xnn_simd_f32_t *)&res;
@@ -126,9 +136,31 @@ static XNN_INLINE xnn_simd_f32_t xnn_cmpeq_f32(xnn_simd_f32_t a,
   return a == b ? ones : 0.0f;
 }
 
+static XNN_INLINE xnn_simd_f32_t xnn_cmpneq_f32(xnn_simd_f32_t a,
+                                                xnn_simd_f32_t b) {
+  XNN_SIMD_CONST_F32_FROM_INT32(ones, 0xFFFFFFFF)
+  return a != b ? ones : 0.0f;
+}
+
+static XNN_INLINE float xnn_reduce_add_f32(xnn_simd_f32_t a) {
+  return a;
+}
+
+static XNN_INLINE float xnn_reduce_min_f32(xnn_simd_f32_t a) {
+  return a;
+}
+
+static XNN_INLINE float xnn_reduce_max_f32(xnn_simd_f32_t a) {
+  return a;
+}
+
 // Special functions.
 #define XNN_SIMD_HAVE_RCP_F32 0
 #define XNN_SIMD_HAVE_RSQRT_F32 0
+
+static XNN_INLINE xnn_simd_f32_t xnn_sqrt_f32(xnn_simd_f32_t a) {
+  return sqrtf(a);
+}
 
 // Load/store operations.
 static XNN_INLINE xnn_simd_f32_t xnn_loadu_f32(const float *ptr) {
@@ -161,4 +193,4 @@ static XNN_INLINE void xnn_store_tail_f32(float *output, xnn_simd_f32_t v,
   *output = v;
 }
 
-#endif  // __XNNPACK_SRC_XNNPACK_SIMD_F32_SCALAR_H_
+#endif  // XNNPACK_SRC_XNNPACK_SIMD_F32_SCALAR_H_

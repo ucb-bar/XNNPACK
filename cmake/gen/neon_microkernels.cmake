@@ -27,7 +27,7 @@ SET(PROD_NEON_MICROKERNEL_SRCS
   src/f32-gemm/gen/f32-gemm-4x2-minmax-neon-lane-ld64.c
   src/f32-gemm/gen/f32-gemm-4x8-minmax-neon-lane-ld128.c
   src/f32-ibilinear-chw/gen/f32-ibilinear-chw-neon-p8.c
-  src/f32-ibilinear/gen/f32-ibilinear-neon-c8.c
+  src/f32-ibilinear/gen/f32-ibilinear-neon-u8.c
   src/f32-igemm/gen/f32-igemm-1x8-minmax-neon-lane-ld64.c
   src/f32-igemm/gen/f32-igemm-4x2-minmax-neon-lane-ld64.c
   src/f32-igemm/gen/f32-igemm-4x8-minmax-neon-lane-ld128.c
@@ -40,7 +40,7 @@ SET(PROD_NEON_MICROKERNEL_SRCS
   src/f32-qu8-vcvt/gen/f32-qu8-vcvt-neon-u32.c
   src/f32-rdminmax/gen/f32-rdmax-2p2x-neon-c32.c
   src/f32-rdminmax/gen/f32-rdmin-2p2x-neon-c32.c
-  src/f32-rdsum/gen/f32-rdsum-7p7x-minmax-neon-c16.c
+  src/f32-rdsum/gen/f32-rdsum-7p7x-minmax-neon-u16.c
   src/f32-rminmax/gen/f32-rmax-neon-u16-acc4.c
   src/f32-rminmax/gen/f32-rmin-neon-u16-acc4.c
   src/f32-rminmax/gen/f32-rminmax-neon-u16-acc4.c
@@ -76,12 +76,11 @@ SET(PROD_NEON_MICROKERNEL_SRCS
   src/f32-vlog/gen/f32-vlog-neon-rational-3-3-div.c
   src/f32-vlrelu/gen/f32-vlrelu-neon-u8.c
   src/f32-vmulcaddc/gen/f32-vmulcaddc-c4-minmax-neon-2x.c
-  src/f32-vrelu/gen/f32-vrelu-neon.c
   src/f32-vrnd/gen/f32-vrndd-neon-u8.c
   src/f32-vrnd/gen/f32-vrndne-neon-u8.c
   src/f32-vrnd/gen/f32-vrndu-neon-u8.c
   src/f32-vrnd/gen/f32-vrndz-neon-u8.c
-  src/f32-vrsqrt/gen/f32-vrsqrt-neon-rsqrt-u16.c
+  src/f32-vrsqrt/gen/f32-vrsqrt-neon-rsqrt.c
   src/f32-vsigmoid/gen/f32-vsigmoid-neon-rr2-lut64-p2-nr2recps-u8.c
   src/f32-vsin/gen/f32-vsin-neon-rational-5-4-div.c
   src/f32-vtanh/gen/f32-vtanh-neon-rational-9-8-div.c
@@ -109,7 +108,7 @@ SET(PROD_NEON_MICROKERNEL_SRCS
   src/qs8-qc8w-gemm/gen/qs8-qc8w-gemm-2x8c2s4-minmax-fp32-neon-mlal.c
   src/qs8-qc8w-igemm/gen/qs8-qc8w-igemm-1x8c2s4-minmax-fp32-neon-mlal.c
   src/qs8-qc8w-igemm/gen/qs8-qc8w-igemm-2x8c2s4-minmax-fp32-neon-mlal.c
-  src/qs8-rdsum/gen/qs8-rdsum-7p7x-minmax-fp32-neon-c32.c
+  src/qs8-rdsum/gen/qs8-rdsum-7p7x-minmax-fp32-neon-u32.c
   src/qs8-rsum/gen/qs8-rsum-neon-u32-acc2.c
   src/qs8-vadd/gen/qs8-vadd-minmax-neon-ld64-u16.c
   src/qs8-vadd/gen/qs8-vadd-minmax-neon-ld64-u32.c
@@ -143,8 +142,8 @@ SET(PROD_NEON_MICROKERNEL_SRCS
   src/qu8-vlrelu/gen/qu8-vlrelu-neon-u32.c
   src/qu8-vmul/gen/qu8-vmul-minmax-rndnu-neon-ld64-u16.c
   src/qu8-vmulc/gen/qu8-vmulc-minmax-rndnu-neon-ld64-u16.c
-  src/s8-ibilinear/gen/s8-ibilinear-neon-c8.c
-  src/s8-ibilinear/gen/s8-ibilinear-neon-c16.c
+  src/s8-ibilinear/gen/s8-ibilinear-neon-u8.c
+  src/s8-ibilinear/gen/s8-ibilinear-neon-u16.c
   src/s8-maxpool/gen/s8-maxpool-9p-minmax-neon-u16.c
   src/s8-rdminmax/gen/s8-rdmax-2p2x-neon-c32.c
   src/s8-rdminmax/gen/s8-rdmin-2p2x-neon-c32.c
@@ -152,8 +151,8 @@ SET(PROD_NEON_MICROKERNEL_SRCS
   src/s8-rminmax/gen/s8-rmin-neon-u32-acc2.c
   src/s8-rminmax/gen/s8-rminmax-neon-u32-acc2.c
   src/s8-vclamp/s8-vclamp-neon-u64.c
-  src/u8-ibilinear/gen/u8-ibilinear-neon-c8.c
-  src/u8-ibilinear/gen/u8-ibilinear-neon-c16.c
+  src/u8-ibilinear/gen/u8-ibilinear-neon-u8.c
+  src/u8-ibilinear/gen/u8-ibilinear-neon-u16.c
   src/u8-maxpool/gen/u8-maxpool-9p-minmax-neon-u16.c
   src/u8-rdminmax/gen/u8-rdmax-2p2x-neon-c32.c
   src/u8-rdminmax/gen/u8-rdmin-2p2x-neon-c32.c
@@ -166,9 +165,11 @@ SET(PROD_NEON_MICROKERNEL_SRCS
   src/x16-packw/gen/x16-packw-x16-gemm-goi-neon-ld4lane-u8-prfm.c
   src/x16-transposec/gen/x16-transposec-8x8-reuse-dec-zip-neon.c
   src/x24-transposec/x24-transposec-2x2-neon-tbl64.c
+  src/x32-packw/gen/x32-packw-gio-neon-u2.c
   src/x32-packw/gen/x32-packw-x2-gemm-goi-neon-ld2lane-u2-prfm.c
   src/x32-packw/gen/x32-packw-x8-gemm-goi-neon-ld4lane-u4-prfm.c
   src/x32-packw/gen/x32-packw-x8s4-gemm-goi-neon-ld4lane-u4-prfm.c
+  src/x32-packw/gen/x32-packw-x16-gemm-goi-neon-ld4lane-u4-prfm.c
   src/x32-transposec/gen/x32-transposec-4x4-reuse-dec-zip-neon.c
   src/x32-unpool/x32-unpool-neon.c
   src/x64-transposec/gen/x64-transposec-2x2-multi-dec-zip-neon.c
@@ -273,25 +274,9 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/f32-gemm/gen/f32-gemm-6x8s4-minmax-neon.c
   src/f32-gemm/gen/f32-gemm-6x16-minmax-neon-lane-ld128.c
   src/f32-gemm/gen/f32-gemm-8x8s4-minmax-neon.c
-  src/f32-gemminc/gen/f32-gemminc-1x8-minmax-neon-dup-ld64.c
-  src/f32-gemminc/gen/f32-gemminc-1x8-minmax-neon-lane-ld64.c
-  src/f32-gemminc/gen/f32-gemminc-1x8-minmax-neon-lane-ld128.c
-  src/f32-gemminc/gen/f32-gemminc-1x8s4-minmax-neon.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-neon-dup-ld64.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-neon-dup-ld128.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-neon-lane-ld64.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-neon-lane-ld128.c
-  src/f32-gemminc/gen/f32-gemminc-4x8s4-minmax-neon.c
-  src/f32-gemminc/gen/f32-gemminc-5x8-minmax-neon-lane-ld64.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-neon-dup-ld64.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-neon-dup-ld128.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-neon-lane-ld64.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-neon-lane-ld128.c
-  src/f32-gemminc/gen/f32-gemminc-6x8s4-minmax-neon.c
-  src/f32-gemminc/gen/f32-gemminc-8x8s4-minmax-neon.c
   src/f32-ibilinear-chw/gen/f32-ibilinear-chw-neon-p4.c
   src/f32-ibilinear-chw/gen/f32-ibilinear-chw-neon-p16.c
-  src/f32-ibilinear/gen/f32-ibilinear-neon-c4.c
+  src/f32-ibilinear/gen/f32-ibilinear-neon-u4.c
   src/f32-igemm/gen/f32-igemm-1x8-minmax-neon-dup-ld64.c
   src/f32-igemm/gen/f32-igemm-1x8-minmax-neon-lane-ld128.c
   src/f32-igemm/gen/f32-igemm-1x8s4-minmax-neon.c
@@ -345,8 +330,8 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/f32-raddstoreexpminusmax/gen/f32-raddstoreexpminusmax-neon-rr2-p5-u8-acc2.c
   src/f32-raddstoreexpminusmax/gen/f32-raddstoreexpminusmax-neon-rr2-p5-u16-acc2.c
   src/f32-raddstoreexpminusmax/gen/f32-raddstoreexpminusmax-neon-rr2-p5-u16-acc4.c
-  src/f32-rdsum/gen/f32-rdsum-7p7x-minmax-neon-c32.c
-  src/f32-rdsum/gen/f32-rdsum-7p7x-minmax-neon-c64.c
+  src/f32-rdsum/gen/f32-rdsum-7p7x-minmax-neon-u32.c
+  src/f32-rdsum/gen/f32-rdsum-7p7x-minmax-neon-u64.c
   src/f32-rminmax/gen/f32-rmax-neon-u4.c
   src/f32-rminmax/gen/f32-rmax-neon-u8-acc2.c
   src/f32-rminmax/gen/f32-rmax-neon-u12-acc3.c
@@ -364,17 +349,17 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/f32-rsum/gen/f32-rsum-neon-u12-acc3.c
   src/f32-rsum/gen/f32-rsum-neon-u16-acc2.c
   src/f32-spmm/gen/f32-spmm-4x1-minmax-neon-pipelined.c
-  src/f32-spmm/gen/f32-spmm-4x1-minmax-neon-x2.c
+  src/f32-spmm/gen/f32-spmm-4x1-minmax-neon-u2.c
   src/f32-spmm/gen/f32-spmm-4x1-minmax-neon.c
   src/f32-spmm/gen/f32-spmm-8x1-minmax-neon-pipelined.c
-  src/f32-spmm/gen/f32-spmm-8x1-minmax-neon-x2.c
+  src/f32-spmm/gen/f32-spmm-8x1-minmax-neon-u2.c
   src/f32-spmm/gen/f32-spmm-8x1-minmax-neon.c
   src/f32-spmm/gen/f32-spmm-12x1-minmax-neon.c
   src/f32-spmm/gen/f32-spmm-16x1-minmax-neon-pipelined.c
-  src/f32-spmm/gen/f32-spmm-16x1-minmax-neon-x2.c
+  src/f32-spmm/gen/f32-spmm-16x1-minmax-neon-u2.c
   src/f32-spmm/gen/f32-spmm-16x1-minmax-neon.c
   src/f32-spmm/gen/f32-spmm-32x1-minmax-neon-pipelined.c
-  src/f32-spmm/gen/f32-spmm-32x1-minmax-neon-x2.c
+  src/f32-spmm/gen/f32-spmm-32x1-minmax-neon-u2.c
   src/f32-vbinary/gen/f32-vadd-neon-u4.c
   src/f32-vbinary/gen/f32-vaddc-neon-u4.c
   src/f32-vbinary/gen/f32-vmax-neon-u4.c
@@ -408,8 +393,6 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/f32-vrnd/gen/f32-vrndne-neon-u4.c
   src/f32-vrnd/gen/f32-vrndu-neon-u4.c
   src/f32-vrnd/gen/f32-vrndz-neon-u4.c
-  src/f32-vrsqrt/gen/f32-vrsqrt-neon-rsqrt-u4.c
-  src/f32-vrsqrt/gen/f32-vrsqrt-neon-rsqrt-u8.c
   src/f32-vsigmoid/gen/f32-vsigmoid-neon-rr2-lut64-p2-nr2recps-u4.c
   src/f32-vsigmoid/gen/f32-vsigmoid-neon-rr2-lut64-p2-nr2recps-u12.c
   src/f32-vsigmoid/gen/f32-vsigmoid-neon-rr2-lut64-p2-nr2recps-u16.c
@@ -422,6 +405,7 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/f32-vsigmoid/gen/f32-vsigmoid-neon-rr2-p5-nr2recps-u12.c
   src/f32-vsigmoid/gen/f32-vsigmoid-neon-rr2-p5-nr2recps-u16.c
   src/f32-vsin/gen/f32-vsin-neon-rational-5-4-nr.c
+  src/f32-vsqrt/gen/f32-vsqrt-neon-rsqrt.c
   src/f32-vtanh/gen/f32-vtanh-neon-rational-9-8-nr.c
   src/qd8-f32-qb4w-gemm/gen/qd8-f32-qb4w-gemm-1x16-minmax-neon-mlal-lane-prfm.c
   src/qd8-f32-qb4w-gemm/gen/qd8-f32-qb4w-gemm-2x16-minmax-neon-mlal-lane-prfm.c
@@ -596,8 +580,8 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/qs8-qc8w-igemm/gen/qs8-qc8w-igemm-6x8-minmax-fp32-neon-mlal-lane.c
   src/qs8-qc8w-igemm/gen/qs8-qc8w-igemm-6x16-minmax-fp32-neon-mlal-lane-prfm.c
   src/qs8-qc8w-igemm/gen/qs8-qc8w-igemm-6x16-minmax-fp32-neon-mlal-lane.c
-  src/qs8-rdsum/gen/qs8-rdsum-7p7x-minmax-fp32-neon-c16.c
-  src/qs8-rdsum/gen/qs8-rdsum-7p7x-minmax-fp32-neon-c64.c
+  src/qs8-rdsum/gen/qs8-rdsum-7p7x-minmax-fp32-neon-u16.c
+  src/qs8-rdsum/gen/qs8-rdsum-7p7x-minmax-fp32-neon-u64.c
   src/qs8-rsum/gen/qs8-rsum-neon-u16.c
   src/qs8-rsum/gen/qs8-rsum-neon-u64-acc2.c
   src/qs8-rsum/gen/qs8-rsum-neon-u64-acc4.c
@@ -745,7 +729,6 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/x16-transposec/gen/x16-transposec-8x8-reuse-mov-zip-neon.c
   src/x16-transposec/gen/x16-transposec-8x8-reuse-multi-zip-neon.c
   src/x16-transposec/gen/x16-transposec-8x8-reuse-switch-zip-neon.c
-  src/x32-packw/gen/x32-packw-gio-neon-u2.c
   src/x32-packw/gen/x32-packw-x2-gemm-goi-neon-ld2lane-u2.c
   src/x32-packw/gen/x32-packw-x8-gemm-goi-neon-ld4lane-u4.c
   src/x32-packw/gen/x32-packw-x8-gemm-goi-neon-ld4lane-u8-prfm.c
@@ -757,7 +740,6 @@ SET(NON_PROD_NEON_MICROKERNEL_SRCS
   src/x32-packw/gen/x32-packw-x12-gemm-goi-neon-ld4lane-u4.c
   src/x32-packw/gen/x32-packw-x12-gemm-goi-neon-ld4lane-u8-prfm.c
   src/x32-packw/gen/x32-packw-x12-gemm-goi-neon-ld4lane-u8.c
-  src/x32-packw/gen/x32-packw-x16-gemm-goi-neon-ld4lane-u4-prfm.c
   src/x32-packw/gen/x32-packw-x16-gemm-goi-neon-ld4lane-u4.c
   src/x32-packw/gen/x32-packw-x16-gemm-goi-neon-ld4lane-u8-prfm.c
   src/x32-packw/gen/x32-packw-x16-gemm-goi-neon-ld4lane-u8.c
