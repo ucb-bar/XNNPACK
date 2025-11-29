@@ -1386,8 +1386,8 @@ struct xnn_hmp_qp8gemm_bl_ukernel {
   xnn_qp8_f32_qb4w_gemm_minmax_ukernel_fn function[XNN_MAX_UARCH_TYPES];
 };
 
-// Largest GEMM/IGEMM MR used in init.c is 16 (x86 AVX512AMX).
-#if XNN_ARCH_ARM64 && XNN_ENABLE_KLEIDIAI
+// Largest GEMM/IGEMM MR used in init.c is 16 (x86 AVX512AMX). Modified to support KODIAK OPU which has MR of 32
+#if (XNN_ARCH_ARM64 && XNN_ENABLE_KLEIDIAI) || (XNN_ARCH_RISCV  && XNN_ENABLE_RISCV_VECTOR)
 #define XNN_MAX_MR 32
 #else
 #define XNN_MAX_MR 16
