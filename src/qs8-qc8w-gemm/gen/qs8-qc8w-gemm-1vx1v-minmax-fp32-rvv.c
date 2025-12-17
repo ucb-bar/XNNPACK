@@ -13,17 +13,17 @@
 
 #include <riscv_vector.h>
 
-#include "xnnpack/bme.h"
+#include "src/xnnpack/bme.h"
 #include "src/xnnpack/gemm.h"
 #include "src/xnnpack/math.h"
 
 // Borrowed structure from 4x4 version
-// In that version: 
+// In that version:
 //  1. A loads 4 scalar values from along a column
-//  2. B loads 4 LMUL=4 vectors 
+//  2. B loads 4 LMUL=4 vectors
 //  3. Sequence of scalar-vector products in outer product style (incrementing A along row direction, increment B for next row), until k=0
 
-// With OPU you don't need this confusing 
+// With OPU you don't need this confusing
 // Just issue OPACC with two vectors sequentially until k=0
 
 void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
@@ -36,7 +36,8 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
     int8_t* restrict c,       // C Matrix
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[restrict 1])
+    //const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   // assert(mr <= 4); // No restriction; no hardcode scalar loads
@@ -68,7 +69,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
     c3 = c2;
   }
 
-  // Need to check amount left for vector loads 
+  // Need to check amount left for vector loads
 
   const size_t nr = __riscv_vsetvlmax_e8m1(); // MAX amount loaded from B row
   size_t vl = nr;
@@ -76,6 +77,9 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
   const int32_t output_min_less_zero_point = (int32_t) params->fp32_scalar.output_min - (int32_t) params->fp32_scalar.output_zero_point;
   const int32_t output_max_less_zero_point = (int32_t) params->fp32_scalar.output_max - (int32_t) params->fp32_scalar.output_zero_point;
   const int32_t output_zero_point = params->fp32_scalar.output_zero_point;
+  const float output_min_less_zero_point_f = (float) output_min_less_zero_point;
+  const float output_max_less_zero_point_f = (float) output_max_less_zero_point;
+  const float output_zero_point_f = (float) output_zero_point;
   do {
 
     // No need set vl < MAXVL because OPU uses full vector
@@ -96,7 +100,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
     OPU_BCAST(m0, v0);
 
 
-    // TODO: Zero the OPU 
+    // TODO: Zero the OPU
     // vint8m1_t zero_v = __riscv_vmv_v_x_i8m1(0, vl); // vl is MAX as of here
     // OPU_BCAST(m0, zero_v);
 
@@ -108,8 +112,8 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
       __asm__ volatile("vle8.v v0, (%0)" : : "r"((const int8_t*)a)); // Load A column
       __asm__ volatile("vle8.v v1, (%0)" : : "r"((const int8_t*)w)); // Load B row
 
-      VOPACC(m0, v0, v1); // Execute outer product
-      
+      OPU_VOPACC(m0, v0, v1); // Execute outer product
+
       // Increment A and B ptrs
       w = (const int8_t*) w + nr;
       a = (const int8_t*) a + nr;
@@ -119,22 +123,21 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
 
     for (int mrf_r = 0; mrf_r < __riscv_vsetvlmax_e8m1(); mrf_r++) {
       // Set 32-bit elements, LMUL=4
-      vl = __riscv_vsetvlmax_32m4(); // MAX amount loaded from B row
+      vl = __riscv_vsetvlmax_e32m4(); // MAX amount loaded from B row
 
       // Move vector out (whole MRF row)
       OPU_MVOUT(v29, mrf_r, m0);
 
-      // Convert to floating point 
+      // Convert to floating point
       __asm__ volatile("vfcvt.f.x.v v29, v29 \n\t" : : );
 
 
       // Scale by channel scale factor
       __asm__ volatile("vle32.v v28, (%0)" : : "r"((const float*)w)); // Load channel scale factor
-      __asm__ volatile("vfmul.vv v29, v28, v29" 
-        : "v29"
+      __asm__ volatile("vfmul.vv v29, v28, v29 \n\t"
         :
-        : "v29"
-      );   // Scale
+        :
+        : );   // Scale
 
 
       w = (const float*) w + nr;
@@ -143,28 +146,27 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
       __asm__ volatile(
         "vfmax.vf v29, v29, %[min_cmp] \n\t"
         "vfmin.vf v29, v29, %[max_cmp] \n\t"
-        : "v29"
-        : [min_cmp] "r" (output_min_less_zero_point),
-          [max_cmp] "r" (output_max_less_zero_point)
-        : "v29" 
+        :
+        : [min_cmp] "f" (output_min_less_zero_point_f),
+          [max_cmp] "f" (output_max_less_zero_point_f)
+        :
       );
 
-      
+
       vl = __riscv_vsetvl_e16m2(vl); // Convert to element 16
       __asm__ volatile(
         "vsetvli %[vl], %[vl], e16, m2, ta, ma \n\t"
-        "vfncvt.x.f.w v28, v28 \n\t" 
-        : [vl] "+r" (vl),
-          "v28"
-        : 
-        : "v28", "cc"
+        "vfncvt.x.f.w v28, v28 \n\t"
+        : [vl] "+r" (vl)
+        :
+        : "cc"
       ); // Convert fp32 to int16
 
 
-      __asm__ volatile("vadd.vx v28, v28, %[zero_pt] \n\t" 
-        : "v28" 
+      __asm__ volatile("vadd.vx v28, v28, %[zero_pt] \n\t"
+        :
         : [zero_pt] "r" ((int16_t) output_zero_point)
-        : "v28", "cc"
+        : "cc"
       );
 
 
@@ -172,13 +174,12 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
       __asm__ volatile(
         "vsetvli %[vl], %[vl], e8, m1, ta, ma \n\t"
         "vncvt.x.x.w v28, v28 \n\t"
-        : [vl] "+r" (vl),
-          "v28"
+        : [vl] "+r" (vl)
         :
-        : "v28");
+        : );
 
 
-      __asm__ volatile("vse8.v v28, %[C_ptr] \n\t"
+      __asm__ volatile("vse8.v v28, (%[C_ptr]) \n\t"
         :
         : [C_ptr] "r" (c0)
         : "memory"
@@ -191,6 +192,6 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
     a1 = (const int8_t*) ((uintptr_t) a1 - kc);
     a2 = (const int8_t*) ((uintptr_t) a2 - kc);
     a3 = (const int8_t*) ((uintptr_t) a3 - kc);
-    
+
   } while (nc != 0);
 }
