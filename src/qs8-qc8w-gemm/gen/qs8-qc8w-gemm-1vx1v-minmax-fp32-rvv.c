@@ -77,10 +77,8 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
   const int32_t output_min_less_zero_point = (int32_t) params->fp32_scalar.output_min - (int32_t) params->fp32_scalar.output_zero_point;
   const int32_t output_max_less_zero_point = (int32_t) params->fp32_scalar.output_max - (int32_t) params->fp32_scalar.output_zero_point;
   const int32_t output_zero_point = params->fp32_scalar.output_zero_point;
-  const float output_min_less_zero_point_f = (float) output_min_less_zero_point;
-  const float output_max_less_zero_point_f = (float) output_max_less_zero_point;
-  const float output_zero_point_f = (float) output_zero_point;
-  do {
+
+	do {
 
     // No need set vl < MAXVL because OPU uses full vector
     // if XNN_UNLIKELY(nc < nr) {
@@ -147,8 +145,8 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
         "vfmax.vf v29, v29, %[min_cmp] \n\t"
         "vfmin.vf v29, v29, %[max_cmp] \n\t"
         :
-        : [min_cmp] "f" (output_min_less_zero_point_f),
-          [max_cmp] "f" (output_max_less_zero_point_f)
+        : [min_cmp] "f" ((float) output_min_less_zero_point),
+          [max_cmp] "f" ((float) output_max_less_zero_point)
         :
       );
 
