@@ -1,3 +1,5 @@
+#ifndef BME_HEADER
+#define BME_HEADER
 // HACK reuse the scalar registers to avoid assembler hacking for now
 #define m0 "x0"
 #define m1 "x1"
@@ -59,3 +61,4 @@
 
 #define OPU_MVIN(md, rs1, vs2)  OPU_VMV_RV(md, rs1, vs2);
 #define OPU_MVOUT(vd, rs1, ms2) OPU_VMV_VR(vd, rs1, ms2);
+#endif
