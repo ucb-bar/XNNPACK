@@ -10,6 +10,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stdio.h>
 
 #include <riscv_vector.h>
 
@@ -77,7 +78,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1vx1v__rvv(
   const int32_t output_min_less_zero_point = (int32_t) params->fp32_scalar.output_min - (int32_t) params->fp32_scalar.output_zero_point;
   const int32_t output_max_less_zero_point = (int32_t) params->fp32_scalar.output_max - (int32_t) params->fp32_scalar.output_zero_point;
   const int32_t output_zero_point = params->fp32_scalar.output_zero_point;
-
+	printf(" POOR POOR\n");
 	do {
 
     // No need set vl < MAXVL because OPU uses full vector
