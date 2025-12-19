@@ -14,6 +14,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__ZEPHYR__)
+#include <zephyr/sys/printk.h>
+#endif
+
 // OS-specific headers.
 #ifdef _WIN32
 #include <windows.h>
@@ -122,11 +126,14 @@ static void xnn_vlog(int output_handle, const char* prefix,
       &bytes_written, NULL);
 #else
   out_buffer[prefix_length + format_length] = '\n';
-
-  ssize_t bytes_written = write(
-      output_handle, out_buffer,
-      (prefix_length + format_length + XNN_LOG_NEWLINE_LENGTH) * sizeof(char));
-  (void)bytes_written;
+  #if defined(__ZEPHYR__)
+    printk("%s", out_buffer);
+  #else
+    ssize_t bytes_written = write(
+        output_handle, out_buffer,
+        (prefix_length + format_length + XNN_LOG_NEWLINE_LENGTH) * sizeof(char));
+    (void)bytes_written;
+  #endif
 #endif
 
 cleanup:
