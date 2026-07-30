@@ -960,6 +960,10 @@ static xnn_timestamp xnn_read_timer() {
     xnn_log_error("QueryPerformanceCounter failed: error code %u", GetLastError());
     memset(&timestamp, 0, sizeof(timestamp));
   }
+#elif defined(__riscv)
+  uint64_t cyc;
+  __asm__ volatile ("rdcycle %0" : "=r"(cyc));
+  timestamp = cyc;
 #else
   int res = clock_gettime(CLOCK_MONOTONIC, &timestamp);
   if (res != 0) {
@@ -986,6 +990,9 @@ static inline uint64_t xnn_get_elapsed_time(const xnn_timestamp* start, const xn
     return 0;
   }
   return ((end->QuadPart - start->QuadPart) * kMicrosInSec) / frequency.QuadPart;
+#elif defined(__riscv)
+  /* Cycle delta from rdcycle — reported directly as "cycles" (not us). */
+  return (uint64_t)(*end - *start);
 #else
   const uint64_t kNanosInMicro = UINT64_C(1000);
   const uint64_t kNanosInSec = UINT64_C(1000000000);

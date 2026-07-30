@@ -421,6 +421,11 @@ typedef uint64_t xnn_timestamp;
 typedef double xnn_timestamp;
 #elif XNN_PLATFORM_WINDOWS
 typedef LARGE_INTEGER xnn_timestamp;
+#elif defined(__riscv)
+/* Bare-metal RISC-V (Zephyr/spike): clock_gettime is tick-granular (~100us),
+ * too coarse for per-op timing. Use the rdcycle CSR so op timings come out in
+ * CYCLES — high-resolution and directly comparable to modelblaster's rdcycle. */
+typedef uint64_t xnn_timestamp;
 #else
 typedef struct timespec xnn_timestamp;
 #endif
